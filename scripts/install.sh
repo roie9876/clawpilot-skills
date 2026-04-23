@@ -12,7 +12,7 @@ set -euo pipefail
 
 SKILLS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TARGET_DIR="$HOME/.copilot/skills"
-SKILLS=(meeting-prep customer-repo capture-meeting followups azure-answer architecture)
+SKILLS=(meeting-prep customer-repo capture-meeting followups azure-answer architecture connect)
 
 echo "Customer Skills Installer"
 echo "========================="
