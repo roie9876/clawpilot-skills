@@ -46,7 +46,7 @@ Once confirmed, extract the meeting's `id`, `subject`, `start`, `end`, `joinUrl`
 **If the meeting has no `joinUrl`:**
 
 - Warn the user: "This meeting has no Teams join URL. Transcript and facilitator notes are unavailable — capture will be limited to event details and attendees only."
-- Continue with event-only capture (skip Steps 3a and 3b, proceed to Step 3c).
+- Continue with event-only capture (skip Steps 4a and 4b, proceed to Step 4c).
 
 ## Step 2: Detect the Customer
 
@@ -67,11 +67,39 @@ Extract the customer from the meeting context using this priority chain:
 
 Set `{slug}` to the customer folder name (lowercase, hyphenated).
 
-## Step 3: Pull Meeting Data
+## Step 3: Detect/Select Project
+
+Identify which project under the customer folder this meeting belongs to.
+
+1. **List projects:**
+   ```bash
+   ls ~/customer-engagements/{slug}/projects/
+   ```
+
+2. **Auto-select if only one project exists** — use it without asking.
+
+3. **Auto-match by meeting subject keywords:**
+   Compare the meeting subject against project folder names (fuzzy, case-insensitive). If one project name appears in the subject → use it.
+   - Example: meeting subject "סטטוס פרויקט AI Search" matches project folder `ai-search`.
+   - Normalize comparison: lowercase, strip hyphens/spaces, compare substrings.
+
+4. **If multiple projects exist and no auto-match** → present the list and ask the user to pick:
+   - "Multiple projects found for {customer-name}. Which project does this meeting belong to?"
+   - List each project folder as a numbered option.
+
+5. **If no projects directory or no projects exist** → offer to create one:
+   - Suggest a project name derived from the meeting subject (lowercased, hyphenated, special characters removed).
+   - "No projects found for {customer-name}. Create project '{suggested-project-name}'?"
+   - If the user confirms, scaffold via `/customer-repo {customer}/{suggested-project-name}`, then continue.
+   - If the user declines, ask for a project name or allow writing to the customer root as a fallback.
+
+Set `{project}` to the selected project folder name.
+
+## Step 4: Pull Meeting Data
 
 Gather data from three sources. Each call is independent — a failure in one does not block the others.
 
-### 3a. Facilitator Notes (Copilot)
+### 4a. Facilitator Notes (Copilot)
 
 ```
 m365_get_facilitator_notes(joinUrl: "{meeting-join-url}")
@@ -81,7 +109,7 @@ m365_get_facilitator_notes(joinUrl: "{meeting-join-url}")
 - The `actionItems[]` array is the **primary** source for action items — it is structured and high-confidence.
 - If unavailable → note "Facilitator notes unavailable" in the meeting notes. Continue with transcript only.
 
-### 3b. Meeting Transcript
+### 4b. Meeting Transcript
 
 ```
 m365_get_transcript(joinUrl: "{meeting-join-url}")
@@ -94,7 +122,7 @@ m365_get_transcript(joinUrl: "{meeting-join-url}")
 
 **Transcript quality note:** Hebrew-language transcript segments may have lower accuracy. Preserve them as-is — do not attempt to correct, paraphrase, or hallucinate corrections for unclear segments. If quality is visibly poor, add a note: "⚠️ Transcript quality may be reduced for Hebrew segments."
 
-### 3c. Event Details and Attendees
+### 4c. Event Details and Attendees
 
 ```
 m365_get_event(eventId: "{meeting-id}")
@@ -112,7 +140,7 @@ m365_search_people(query: "{attendee-name-or-email}")
 - Extract job title, department, and company for each attendee.
 - If lookup fails for an attendee → list them with email only, no role.
 
-## Step 4: Generate Structured Meeting Notes
+## Step 5: Generate Structured Meeting Notes
 
 Assemble the captured data into structured notes using the template below.
 
@@ -137,9 +165,9 @@ Assemble the captured data into structured notes using the template below.
 - Action items → extract from both English and Hebrew text. Do not translate.
 - Attendee names → preserve original form.
 
-## Step 5: Append Action Items to followups.md
+## Step 6: Append Action Items to followups.md
 
-1. **Compute the path:** `~/customer-engagements/{slug}/followups.md`
+1. **Compute the path:** `~/customer-engagements/{slug}/projects/{project}/followups.md`
 
 2. **If the file exists:**
    - Read the file contents.
@@ -170,11 +198,11 @@ Assemble the captured data into structured notes using the template below.
 
 5. **If no action items were found in either source:** Skip this step. Do not modify followups.md. Note in the meeting notes: "No action items identified."
 
-## Step 6: Write Files and Commit
+## Step 7: Write Files and Commit
 
 1. **Compute the notes output path:**
    ```
-   ~/customer-engagements/{slug}/meetings/{YYYY-MM-DD}-{subject-slug}.md
+   ~/customer-engagements/{slug}/projects/{project}/meetings/{YYYY-MM-DD}-{subject-slug}.md
    ```
    Where `{YYYY-MM-DD}` is the meeting date, and `{subject-slug}` is the meeting subject lowercased, spaces replaced with hyphens, special characters removed, truncated to 60 characters.
 
@@ -183,18 +211,18 @@ Assemble the captured data into structured notes using the template below.
 
 3. **Create the meetings directory if needed:**
    ```bash
-   mkdir -p ~/customer-engagements/{slug}/meetings
+   mkdir -p ~/customer-engagements/{slug}/projects/{project}/meetings
    ```
 
 4. **Write the meeting notes** using the `write` tool.
 
-5. **Write the updated followups.md** (if action items were appended in Step 5).
+5. **Write the updated followups.md** (if action items were appended in Step 6).
 
 6. **Commit to git:**
    ```bash
    cd ~/customer-engagements/{slug}
-   git add meetings/{YYYY-MM-DD}-{subject-slug}.md followups.md
-   git commit -m "capture-meeting: {customer-name} — {meeting-subject}"
+   git add projects/{project}/meetings/{YYYY-MM-DD}-{subject-slug}.md projects/{project}/followups.md
+   git commit -m "capture-meeting: {customer-name}/{project} — {meeting-subject}"
    ```
 
    If the repo is not a git repo or the commit fails, inform the user but do not fail the skill — the files are still written.
@@ -212,6 +240,8 @@ Every m365_* tool call can fail. Handle each failure individually so a single un
 | `m365_search_people` fails for an attendee | List the attendee with email only, no role/title. Continue. |
 | `m365_search_emails` fails or returns empty | Note "Email context unavailable" in the notes. Continue. |
 | Customer folder not found in `~/customer-engagements/` | Offer to run `/customer-repo` to scaffold the folder. If user declines, ask where to write the notes. |
+| No projects found in customer folder | Offer to create one via `/customer-repo {customer}/{suggested-project-name}`. Suggest a project name from the meeting subject. If user declines, ask for a project name or allow writing to the customer root as a fallback. |
+| Multiple projects, no auto-match | Present the list of projects and ask the user to pick. Do not guess. |
 | `git commit` fails | Inform the user the notes were written but not committed. Do not fail the skill. |
 | Meeting has no `joinUrl` | Cannot retrieve transcript or facilitator notes. Degrade to event-only capture: attendees, meeting info, and any content from the event body. Warn the user about the limitation. |
 | Transcript quality poor for Hebrew | Preserve content as-is. Add note: "⚠️ Transcript quality may be reduced for Hebrew segments." Do not hallucinate corrections. |
@@ -224,6 +254,7 @@ Every m365_* tool call can fail. Handle each failure individually so a single un
 
 **Date:** {YYYY-MM-DD} {HH:MM}–{HH:MM} ({timezone})
 **Customer:** {customer-name}
+**Project:** {project-name}
 **Attendees:**
 - {name} ({email}) — {role/title, if known}
 - {name} ({email}) — {role/title, if known}

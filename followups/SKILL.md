@@ -6,8 +6,30 @@ description: "Surface open action items and unresponded customer emails across a
 # /followups — Cross-Customer Follow-up Tracker
 
 Scan all customer engagement repos for open action items and identify unresponded
-customer emails via Microsoft 365. Presents a unified view grouped by customer so
-nothing falls through the cracks.
+customer emails via Microsoft 365. Presents a unified view grouped by customer and
+project so nothing falls through the cracks.
+
+## Folder Structure
+
+Each customer engagement repo uses a project-subfolder model:
+
+```
+~/customer-engagements/{customer-slug}/
+├── README.md              ← customer-level overview
+├── stakeholders.md        ← shared; used for email domain lookup
+├── projects/
+│   ├── {project-slug}/
+│   │   ├── README.md
+│   │   ├── followups.md   ← action items live here (per-project)
+│   │   ├── meetings/
+│   │   ├── decisions/
+│   │   └── architecture/
+```
+
+Key points:
+- `followups.md` lives inside each **project**, not at the customer root.
+- `stakeholders.md` remains at the **customer** root.
+- A single customer can have multiple projects, each with its own followups.
 
 ## Core Principles
 
@@ -19,19 +41,19 @@ nothing falls through the cracks.
 
 ## Step 1: Determine Scope
 
-Decide whether to scan all customers or a specific one.
+Decide whether to scan all customers, a single customer (all projects), or a specific customer/project.
 
-**Default: ALL customers**
+**Default: ALL customers, all projects**
 
 If the user did not name a specific customer (e.g., just "/followups"):
 
 1. Run `ls ~/customer-engagements/` to list all customer folders.
-2. Set `{slugs}` to the full list of folder names.
+2. Set `{slugs}` to the full list of folder names. Each slug will have all its projects scanned.
 3. If the directory is empty or does not exist → report "No customer engagement folders found at ~/customer-engagements/. Run /customer-repo to create one." and stop.
 
-**Single customer mode:**
+**Single customer mode (all projects):**
 
-If the user names a specific customer (e.g., "/followups Contoso"), use the 4-tier detection chain to resolve the customer:
+If the user names a specific customer (e.g., "/followups checkpoint"), use the 4-tier detection chain to resolve the customer:
 
 1. **Folder name match** — Check if the user's input (lowercased, hyphenated) matches an existing folder in `~/customer-engagements/` exactly.
 2. **Folder scan** — Run `ls ~/customer-engagements/` and fuzzy-match the user's input against folder names (case-insensitive, partial match, with/without hyphens).
@@ -40,25 +62,41 @@ If the user names a specific customer (e.g., "/followups Contoso"), use the 4-ti
 
 If the customer folder is not found → report "No folder found for '{customer}' in ~/customer-engagements/. Did you mean one of these: {closest matches}?" and stop.
 
-Set `{slugs}` to the single matched folder name.
+Set `{slugs}` to the single matched folder name. All projects under that customer will be scanned.
+
+**Customer/project mode (single project):**
+
+If the user specifies a customer and project separated by a slash (e.g., "/followups checkpoint/sase"):
+
+1. Split the input on `/` into `{customer-input}` and `{project-input}`.
+2. Resolve `{customer-input}` using the same 4-tier detection chain above.
+3. Check if `~/customer-engagements/{customer-slug}/projects/{project-input}` exists.
+4. If the project folder exists → set `{slugs}` to the single customer and restrict scanning to only that project.
+5. If the project folder does not exist → run `ls ~/customer-engagements/{customer-slug}/projects/` and fuzzy-match. If ambiguous, present closest matches and ask the user to pick. If no projects/ directory → report "No projects/ directory found for '{customer}'." and stop.
 
 ## Step 2: Scan followups.md Files
 
 For each `{slug}` in `{slugs}`:
 
-1. **Read the file:** `~/customer-engagements/{slug}/followups.md`
-2. **Locate the `## Open` section** and parse the markdown table rows.
-3. **Collect rows where Status is `🔴 Open`.** Extract the Action, Owner, and Due columns.
-4. **Attribute each item** with the customer name derived from `{slug}` (convert hyphens to spaces, title-case).
+1. **List projects:** Run `ls ~/customer-engagements/{slug}/projects/` to get all project subfolders. If in customer/project mode, use only the specified project.
+2. **For each `{project}` in the project list:**
+   a. **Read the file:** `~/customer-engagements/{slug}/projects/{project}/followups.md`
+   b. **Locate the `## Open` section** and parse the markdown table rows.
+   c. **Collect rows where Status is `🔴 Open`.** Extract the Action, Owner, and Due columns.
+   d. **Attribute each item** with both the customer name (derived from `{slug}` — convert hyphens to spaces, title-case) and the project name (derived from `{project}` — convert hyphens to spaces, title-case).
 
 **Edge cases:**
 
-- **File missing** → Skip this customer. Record: "{customer}: followups.md not found."
-- **File contains only placeholder HTML comments** (e.g., `<!-- Describe the action item -->`) → Treat as empty. Record: "{customer}: no open action items."
-- **No `## Open` section** → Skip this customer. Record: "{customer}: no Open section in followups.md."
-- **`## Open` section exists but table is empty or has only the header** → Record: "{customer}: no open action items."
+- **No `projects/` directory for a customer** → Skip this customer. Record: "{customer}: no projects/ directory found."
+- **`projects/` directory exists but is empty** → Skip this customer. Record: "{customer}: no projects found."
+- **`followups.md` missing for a project** → Skip that project. Record: "{customer}/{project}: followups.md not found."
+- **File contains only placeholder HTML comments** (e.g., `<!-- Describe the action item -->`) → Treat as empty. Record: "{customer}/{project}: no open action items."
+- **No `## Open` section** → Skip this project. Record: "{customer}/{project}: no Open section in followups.md."
+- **`## Open` section exists but table is empty or has only the header** → Record: "{customer}/{project}: no open action items."
 
 ## Step 3: Find Unresponded Customer Emails
+
+Email checking operates at the **customer level**, not the project level. `stakeholders.md` is at the customer root.
 
 For each `{slug}` in `{slugs}`:
 
@@ -97,17 +135,17 @@ For each `{slug}` in `{slugs}`:
 
 ## Step 4: Present Results
 
-Assemble the collected data into a unified report grouped by customer.
+Assemble the collected data into a unified report grouped by customer, then by project within each customer.
 
 **Summary counts first:**
 
-Show a quick overview at the top so the user can see the big picture at a glance.
+Show a quick overview at the top so the user can see the big picture at a glance. The summary includes project counts.
 
 **Then detail per customer:**
 
 For each customer that has at least one open action item or unresponded email, show:
-1. Open action items table
-2. Unresponded emails list
+1. Projects with open action items (grouped by project)
+2. Unresponded emails (at the customer level, not nested under projects)
 
 Customers with neither open items nor unresponded emails are omitted from the detail section but counted in the summary.
 
@@ -116,19 +154,23 @@ Customers with neither open items nor unresponded emails are omitted from the de
 - All section headings → English.
 - Action item text, email subjects → preserve in original language (English or Hebrew). Do not translate.
 - Customer names → use the display name derived from the folder slug.
+- Project names → use the display name derived from the project folder slug.
 
 ## Error Handling
 
 | Failure Mode | Behavior |
 |-------------|----------|
 | `~/customer-engagements/` directory missing or empty | Report "No customer engagement folders found at ~/customer-engagements/." Stop. |
-| `followups.md` missing for a customer | Skip that customer's action items. Note "{customer}: followups.md not found" in the report. |
+| No `projects/` directory for a customer | Skip that customer's action items. Note "{customer}: no projects/ directory found" in the report. |
+| `projects/` directory empty for a customer | Note "{customer}: no projects found" in the report. |
+| `followups.md` missing for a project | Skip that project's action items. Note "{customer}/{project}: followups.md not found" in the report. |
 | `followups.md` has no `## Open` section or is placeholder-only | Treat as zero open items. Note in report. |
 | `stakeholders.md` missing for a customer | Skip email check for that customer. Note "{customer}: skipped email check — no stakeholders.md." |
 | `stakeholders.md` has no parseable email addresses | Skip email check for that customer. Note "{customer}: no stakeholder emails found." |
 | `m365_search_emails` fails or returns error | Skip email check for that customer. Note "{customer}: email search failed." Continue with other customers. |
 | `m365_list_emails` fails or returns error | Cannot determine reply status. Show inbound emails without unresponded filtering. Note the limitation. |
 | Single customer not found in `~/customer-engagements/` | Report "No folder found for '{name}'." Suggest closest matches if available. Stop. |
+| Project not found under a customer | Report "No project '{project}' found under '{customer}'." Suggest closest matches from `projects/`. Stop. |
 | All customers scanned but none have open items or emails | Report "🎉 All clear — no open action items or unresponded emails found across {N} customers." |
 
 ## Output Template
@@ -137,27 +179,39 @@ Customers with neither open items nor unresponded emails are omitted from the de
 # 📋 Follow-up Report
 
 **Generated:** {timestamp}
-**Scope:** {All customers | {customer-name}}
+**Scope:** {All customers | {customer-name} | {customer-name}/{project-name}}
 **Customers scanned:** {N}
+**Projects scanned:** {N}
 
 ## Summary
 
-- **Open action items:** {total-count} across {customer-count} customers
+- **Open action items:** {total-count} across {project-count} projects in {customer-count} customers
 - **Unresponded emails:** {total-count} across {customer-count} customers
 - **Customers with no pending items:** {count}
 
-{If any customers had errors, list them here:}
+{If any customers/projects had errors, list them here:}
 - ⚠️ {customer}: {error-note}
+- ⚠️ {customer}/{project}: {error-note}
 
 ---
 
 ## {Customer Name}
 
-### Open Action Items
+### Project: {project-name}
+
+#### Open Action Items
 
 | Action | Owner | Due | Status |
 |--------|-------|-----|--------|
 | {action text} | {owner} | {due date} | 🔴 Open |
+| {action text} | {owner} | {due date} | 🔴 Open |
+
+### Project: {project-name-2}
+
+#### Open Action Items
+
+| Action | Owner | Due | Status |
+|--------|-------|-----|--------|
 | {action text} | {owner} | {due date} | 🔴 Open |
 
 ### Unresponded Emails (Last 14 Days)
@@ -169,7 +223,9 @@ Customers with neither open items nor unresponded emails are omitted from the de
 
 ## {Customer Name 2}
 
-### Open Action Items
+### Project: {project-name}
+
+#### Open Action Items
 
 {same format as above}
 

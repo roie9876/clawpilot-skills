@@ -16,7 +16,7 @@ repo and commit it.
 - **Preserve source language.** Section headings are always English. Content (meeting body, email excerpts, notes, action items) stays in its original language — do not translate Hebrew to English or vice versa. Preserve Hebrew text as-is.
 - **Graceful degradation.** Every data source can fail. The brief must still be useful even when some sources return nothing. Note what's missing so the user knows what to check manually.
 - **Best-effort customer detection.** Use attendee email domains as the primary signal, then folder scanning, then meeting subject. Suggest when ambiguous, ask when unknown — never guess a customer name.
-- **One brief per meeting.** Output is both `.html` (RTL, dark-theme, auto-opened in Edge) and `.md` (for git). Path is deterministic: `~/customer-engagements/{slug}/meetings/{date}-{subject-slug}.*`. If files already exist, ask whether to overwrite or append.
+- **One brief per meeting.** Output is both `.html` (RTL, dark-theme, auto-opened in Edge) and `.md` (for git). Path is deterministic: `~/customer-engagements/{slug}/projects/{project}/meetings/{date}-{subject-slug}.*`. If files already exist, ask whether to overwrite or append.
 - **Commit immediately.** After writing the brief, commit to git so it's versioned and findable.
 
 ## Step 1: Identify the Target Meeting
@@ -61,21 +61,34 @@ Extract the customer from the meeting context using this priority chain:
 
 Set `{slug}` to the customer folder name (lowercase, hyphenated).
 
-## Step 3: Gather Prior Context from Customer Repo
+## Step 3: Detect/Select Project
+
+Within the detected customer repo, identify which project this meeting relates to:
+
+1. **List projects** — Run `ls ~/customer-engagements/{slug}/projects/` to enumerate project subfolders.
+2. **Auto-select if only one project exists** — Use it without asking.
+3. **Auto-match by meeting subject keywords** — Compare the meeting subject against project folder names using fuzzy, case-insensitive matching. Example: a meeting titled "SASE Architecture Review" matches a project folder named `sase`.
+4. **If multiple projects and no auto-match** → Present a numbered list of projects and ask the user to pick.
+5. **If no `projects/` directory or no project folders exist** → Offer to create one via `/customer-repo {customer}/{suggested-name}` (derive the suggested name from the meeting subject). If the user confirms, scaffold the project and continue. If the user declines, fall back to the customer-level folder.
+
+Set `{project}` to the selected project folder name.
+
+## Step 4: Gather Prior Context from Customer Repo
 
 Read existing files from the customer engagement folder to build context:
 
-1. **Prior meeting notes** — `ls ~/customer-engagements/{slug}/meetings/` and read the 2-3 most recent files. Extract key decisions, open items, and follow-ups.
-2. **Open follow-ups** — Check if `~/customer-engagements/{slug}/follow-ups.md` or similar tracking files exist. Read and extract open items.
-3. **Account context** — Check for `~/customer-engagements/{slug}/README.md` or `account.md` for background on the engagement (stakeholders, project scope, etc.).
+1. **Prior meeting notes** — `ls ~/customer-engagements/{slug}/projects/{project}/meetings/` and read the 2-3 most recent files. Extract key decisions, open items, and follow-ups.
+2. **Open follow-ups** — Check if `~/customer-engagements/{slug}/projects/{project}/followups.md` exists. Read and extract open items.
+3. **Account context** — Check for `~/customer-engagements/{slug}/README.md` for background on the engagement (stakeholders, overall relationship, etc.).
+4. **Project context** — Check for `~/customer-engagements/{slug}/projects/{project}/README.md` for project-specific scope, goals, and architecture context.
 
-If any file is missing, skip silently — these are optional enrichments.
+If any file is missing, skip silently — these are optional enrichments. If the project-level README.md is missing, note "Project README not found — project-specific context unavailable" in the brief.
 
-## Step 4: Gather M365 Data
+## Step 5: Gather M365 Data
 
 Run these tool calls to collect meeting intelligence. Each call has an explicit failure path — if a tool fails, note the gap in the brief and continue with remaining sources.
 
-### 4a. Prior Email Threads
+### 5a. Prior Email Threads
 
 Search for recent emails involving the customer or meeting subject:
 
@@ -86,7 +99,7 @@ m365_search_emails(query: "{customer-name} OR {meeting-subject}", startDate: "{3
 - Extract key topics, decisions, and open questions from the email threads.
 - If the search fails or returns no results → note "Email context unavailable" in the brief.
 
-### 4b. Prior Meeting Notes (Facilitator / Copilot)
+### 5b. Prior Meeting Notes (Facilitator / Copilot)
 
 If the meeting is recurring or has a prior occurrence, try to get facilitator notes from the last instance:
 
@@ -103,7 +116,7 @@ m365_get_facilitator_notes(topic: "{meeting-subject}")
 - Extract meeting notes and action items.
 - If unavailable → note "Facilitator notes unavailable (requires organizer role + Microsoft 365 Copilot license)" in the brief.
 
-### 4c. Prior Meeting Transcript
+### 5c. Prior Meeting Transcript
 
 If a prior meeting had a Teams recording:
 
@@ -114,7 +127,7 @@ m365_get_transcript(joinUrl: "{prior-meeting-join-url}")
 - Summarize key discussion points if the transcript is available.
 - If unavailable → note "No transcript available for the prior meeting" in the brief.
 
-### 4d. Attendee Lookup
+### 5d. Attendee Lookup
 
 For external attendees, enrich with organizational context:
 
@@ -125,7 +138,7 @@ m365_search_people(query: "{attendee-name-or-email}")
 - Extract job title, department, and company for each attendee.
 - If lookup fails for an attendee → list them with email only, no role.
 
-## Step 5: Generate the Prep Brief
+## Step 6: Generate the Prep Brief
 
 **Output format: RTL HTML** — The brief is generated as a self-contained `.html` file with `dir="rtl"` and dark-theme styling. This ensures mixed Hebrew/English content is properly right-aligned and renders beautifully in a browser.
 
@@ -174,7 +187,7 @@ Use this HTML structure as the base. Populate sections with gathered data:
 </style>
 </head>
 <body>
-<!-- Populate sections: h1 title, metadata table, attendees table,
+<!-- Populate sections: h1 title, metadata table (including Project row), attendees table,
      Prior Context (ul), Open Follow-ups (ul with .tag-pending spans),
      Facilitator Notes, Key Topics/Agenda (ol), Preparation Notes (ul with emoji prefixes),
      footer -->
@@ -183,7 +196,7 @@ Use this HTML structure as the base. Populate sections with gathered data:
 ```
 
 **Key HTML patterns:**
-- Meeting metadata → `<table>` with th/td rows (date, customer, partner, location, organizer)
+- Meeting metadata → `<table>` with th/td rows (date, customer, project, partner, location, organizer)
 - Attendees → `<table>` with columns: שם, אימייל, ארגון / תפקיד. Email cells get `class="ltr"`.
 - Important notes → `<div class="note">` with right-border accent
 - Open follow-ups → `<ul>` items with `<span class="tag tag-pending">ממתין</span>` prefix
@@ -198,6 +211,7 @@ Also write a standard `.md` file with the same content for git tracking:
 
 **Date:** {date} {time} ({timezone})
 **Customer:** {customer-name}
+**Project:** {project}
 **Attendees:**
 - {name} ({email}) — {role/title, if known}
 
@@ -227,12 +241,12 @@ Also write a standard `.md` file with the same content for git tracking:
 - Action items → extract from both English and Hebrew text. Do not translate.
 - Attendee names → preserve original form.
 
-## Step 6: Write Files, Commit, and Open
+## Step 7: Write Files, Commit, and Open
 
 1. **Compute the output paths:**
    ```
-   ~/customer-engagements/{slug}/meetings/{YYYY-MM-DD}-{subject-slug}.html   (primary — for viewing)
-   ~/customer-engagements/{slug}/meetings/{YYYY-MM-DD}-{subject-slug}.md     (secondary — for git)
+   ~/customer-engagements/{slug}/projects/{project}/meetings/{YYYY-MM-DD}-{subject-slug}.html   (primary — for viewing)
+   ~/customer-engagements/{slug}/projects/{project}/meetings/{YYYY-MM-DD}-{subject-slug}.md     (secondary — for git)
    ```
    Where `{subject-slug}` is the meeting subject lowercased, spaces replaced with hyphens, special characters removed, truncated to 60 characters.
 
@@ -241,7 +255,7 @@ Also write a standard `.md` file with the same content for git tracking:
 
 3. **Create the meetings directory if needed:**
    ```bash
-   mkdir -p ~/customer-engagements/{slug}/meetings
+   mkdir -p ~/customer-engagements/{slug}/projects/{project}/meetings
    ```
 
 4. **Write both files** — the `.html` (RTL, dark-theme, styled) and `.md` (plain markdown).
@@ -249,15 +263,15 @@ Also write a standard `.md` file with the same content for git tracking:
 5. **Commit to git:**
    ```bash
    cd ~/customer-engagements/{slug}
-   git add meetings/{YYYY-MM-DD}-{subject-slug}.html meetings/{YYYY-MM-DD}-{subject-slug}.md
-   git commit -m "meeting-prep: {customer-name} — {meeting-subject}"
+   git add projects/{project}/meetings/{YYYY-MM-DD}-{subject-slug}.html projects/{project}/meetings/{YYYY-MM-DD}-{subject-slug}.md
+   git commit -m "meeting-prep: {customer-name}/{project} — {meeting-subject}"
    ```
 
    If the repo is not a git repo or the commit fails, inform the user but do not fail the skill — the brief is still written.
 
 6. **Open the HTML brief in Microsoft Edge:**
    ```bash
-   open -a "Microsoft Edge" ~/customer-engagements/{slug}/meetings/{YYYY-MM-DD}-{subject-slug}.html
+   open -a "Microsoft Edge" ~/customer-engagements/{slug}/projects/{project}/meetings/{YYYY-MM-DD}-{subject-slug}.html
    ```
 
 ## Error Handling
@@ -273,6 +287,9 @@ Every m365_* tool call can fail. Handle each failure individually so a single un
 | `m365_get_transcript` fails | Note "No transcript available for the prior meeting" in the brief. Continue. |
 | `m365_search_people` fails for an attendee | List the attendee with email only, no role/title. Continue. |
 | Customer folder not found in `~/customer-engagements/` | Offer to run `/customer-repo` to scaffold the folder. If user declines, use a temp folder or ask where to write the brief. |
+| No `projects/` directory found under customer folder | Offer to create the project structure via `/customer-repo {customer}/{suggested-name}`. If user declines, fall back to customer-level folder. |
+| Multiple projects, no auto-match to meeting subject | Present a numbered list of projects and ask the user to pick. |
+| Project `README.md` missing | Skip project-specific context. Note "Project README not found — project-specific context unavailable" in the brief. Continue. |
 | `git commit` fails | Inform the user the brief was written but not committed. Do not fail the skill. |
 | Meeting has no attendees | Skip customer detection from domains. Fall back to subject line and user prompt. |
 | Meeting is cancelled | Warn the user: "This meeting is marked as cancelled. Proceed anyway?" |

@@ -1,42 +1,53 @@
 ---
 name: customer-repo
-description: "Scaffold a new customer engagement folder at ~/customer-engagements/<name>/ with README, stakeholder tracking, follow-up tracking, meeting notes, decisions, and architecture directories. Initializes a local-only git repo with push-blocking hooks. Triggers include: 'new customer', 'customer repo', 'scaffold customer', 'create customer folder', 'set up customer', 'onboard customer', or any request to create a new customer engagement workspace."
+description: "Scaffold a customer engagement workspace at ~/customer-engagements/{customer}/ with optional per-project subfolders. Supports '/customer-repo Contoso' (customer only) or '/customer-repo Contoso/SASE-PoC' (customer + project). Initializes a local-only git repo with push-blocking hooks. Triggers include: 'new customer', 'customer repo', 'scaffold customer', 'create customer folder', 'set up customer', 'onboard customer', or any request to create a new customer engagement workspace."
 ---
 
 # /customer-repo — Customer Engagement Folder Scaffolding
 
-Create a complete, local-only customer engagement folder with standardized
+Create a complete, local-only customer engagement workspace with standardized
 templates, tracking files, and a git repo that blocks pushes to keep customer
-data off remote servers.
+data off remote servers. Supports customer-level scaffolding and optional
+per-project subfolders within each customer.
 
 ## Core Principles
 
 - **Local-only data.** Customer engagement data never leaves the local machine via git. The repo is initialized with a pre-push hook that blocks all pushes. No remote is ever configured.
-- **Idempotent.** If the customer folder already exists, report what's there and offer to fill any gaps (missing files or directories) rather than overwriting.
+- **Idempotent.** If the customer or project folder already exists, report what's there and offer to fill any gaps (missing files or directories) rather than overwriting.
 - **OneDrive backup.** Remind the user to back up the folder via their OneDrive for Business sync folder (typically `~/OneDrive - <YourCompany>/` on macOS/Linux or `%USERPROFILE%\OneDrive - <YourCompany>\` on Windows — exact path varies per tenant). This keeps customer data on a managed, NDA-safe location.
-- **Customer name from input.** Accept the customer name from the user's prompt (e.g., "/customer-repo Contoso") or ask for it if not provided. Never guess or fabricate a customer name.
+- **Names from input.** Accept the customer name (and optional project name) from the user's prompt or ask if not provided. Never guess or fabricate names.
 
-## Step 1: Collect Customer Name
+## Step 1: Collect Names
 
-Accept the customer name from the prompt or ask the user directly.
+Parse the user's input for a **customer name** and an optional **project name**.
 
-**If provided in the prompt:**
-- Extract the customer name from the user's message (e.g., "/customer-repo Contoso" → "Contoso").
+**Accepted input formats:**
+- `/customer-repo Contoso` → customer only, no project.
+- `/customer-repo Contoso/SASE PoC` → customer + project (separated by `/`).
+- `/customer-repo Contoso SASE PoC` → customer + project (separated by space — treat the first token as customer, the rest as project).
 
-**If not provided:**
+**If nothing provided:**
 - Ask: "What is the customer name for this engagement?"
 
-**Slugify the name for the folder:**
+**If only a customer name is provided:**
+- Proceed with customer-only scaffolding.
+- After scaffolding, ask: "Want to add a project under this customer now? (e.g., `/customer-repo {customer-name}/project-name`)"
+
+**Slugify each name independently for its folder:**
 - Lowercase
 - Replace spaces with hyphens
 - Remove special characters (keep only `a-z`, `0-9`, `-`)
-- Example: "Contoso Ltd." → `contoso-ltd`
+- Example: "Contoso Ltd." → `contoso-ltd`, "SASE PoC" → `sase-poc`
 
-Set `{name}` to the display name (e.g., "Contoso Ltd.") and `{slug}` to the folder name (e.g., `contoso-ltd`).
+Set:
+- `{customer-name}` → display name (e.g., "Contoso Ltd.")
+- `{customer-slug}` → folder name (e.g., `contoso-ltd`)
+- `{project-name}` → display name (e.g., "SASE PoC") — may be empty
+- `{project-slug}` → folder name (e.g., `sase-poc`) — may be empty
 
 ## Step 2: Create Folder Structure
 
-**First, check if the base directory exists:**
+**First, ensure the base directory exists:**
 
 ```bash
 mkdir -p ~/customer-engagements
@@ -45,51 +56,78 @@ mkdir -p ~/customer-engagements
 **Then check if the customer folder already exists:**
 
 ```bash
-ls ~/customer-engagements/{slug}/ 2>/dev/null
+ls ~/customer-engagements/{customer-slug}/ 2>/dev/null
 ```
 
-**If the folder already exists:**
-- List the existing files and directories.
-- Report to the user: "Customer folder already exists at ~/customer-engagements/{slug}/ with these files: ..."
-- Identify any missing files or directories from the standard structure below.
-- Ask: "Want me to fill in the missing items, or leave it as-is?"
-- If the user wants to fill gaps, only create what's missing. Do not overwrite existing files.
+### Case A: Customer folder does NOT exist
 
-**If the folder does not exist, create the full structure:**
+Create the customer-level structure:
 
 ```bash
-mkdir -p ~/customer-engagements/{slug}/meetings
-mkdir -p ~/customer-engagements/{slug}/decisions
-mkdir -p ~/customer-engagements/{slug}/architecture
+mkdir -p ~/customer-engagements/{customer-slug}
 ```
 
-The target structure is:
+If a project name was also provided, create the project structure too:
+
+```bash
+mkdir -p ~/customer-engagements/{customer-slug}/projects/{project-slug}/meetings
+mkdir -p ~/customer-engagements/{customer-slug}/projects/{project-slug}/decisions
+mkdir -p ~/customer-engagements/{customer-slug}/projects/{project-slug}/architecture
+```
+
+### Case B: Customer folder ALREADY exists
+
+- List the existing files and directories.
+- Report to the user: "Customer folder already exists at ~/customer-engagements/{customer-slug}/ with these files: ..."
+
+**If a project name was provided:**
+- Check if `projects/{project-slug}/` already exists.
+  - If it does NOT exist: create the project subfolder and its files (skip to project creation below).
+  - If it DOES exist: check for missing files/directories within the project. Offer to fill gaps. If everything is present, report: "Project '{project-name}' is already fully scaffolded under {customer-name}."
+
+**If no project name was provided:**
+- Identify any missing customer-level files or the `projects/` directory.
+- Ask: "Want me to fill in the missing items, or add a new project?"
+- If the customer folder is fully complete, report: "Customer folder already fully scaffolded." List existing projects if any. Ask: "Want to add a new project?"
+
+**Idempotency rule:** Only create what's missing. Never overwrite existing files.
+
+### Target Structure
 
 ```
-~/customer-engagements/{slug}/
-├── README.md
-├── stakeholders.md
-├── followups.md
-├── meetings/
-├── decisions/
-└── architecture/
+~/customer-engagements/{customer-slug}/
+├── README.md              ← customer-level overview
+├── stakeholders.md        ← shared across all projects
+├── projects/
+│   ├── {project-slug}/
+│   │   ├── README.md      ← project scope, status, links
+│   │   ├── followups.md   ← action items for this project
+│   │   ├── meetings/      ← meeting prep briefs and notes
+│   │   ├── decisions/     ← architectural and project decisions
+│   │   └── architecture/  ← diagrams and technical docs
 ```
 
 ## Step 3: Populate Template Files
 
 Write each template file using the `write` tool. Only create files that don't already exist (idempotency).
 
-### README.md
+### Customer-Level Files
+
+#### README.md — `~/customer-engagements/{customer-slug}/README.md`
 
 ```markdown
-# {name}
+# {customer-name}
 
 **Engagement start:** {YYYY-MM-DD}
-**Account folder:** ~/customer-engagements/{slug}/
+**Account folder:** ~/customer-engagements/{customer-slug}/
 
 ## Overview
 
-<!-- Brief description of the engagement, project scope, and objectives. -->
+<!-- Brief description of the customer relationship and engagement context. -->
+
+## Projects
+
+<!-- List of active projects under this customer. -->
 
 ## Key Links
 
@@ -105,10 +143,10 @@ Back up this folder regularly via your OneDrive for Business sync folder
 > All data must remain local or within the approved OneDrive backup path.
 ```
 
-### stakeholders.md
+#### stakeholders.md — `~/customer-engagements/{customer-slug}/stakeholders.md`
 
 ```markdown
-# Stakeholders — {name}
+# Stakeholders — {customer-name}
 
 | Name | Role | Email | Notes |
 |------|------|-------|-------|
@@ -121,10 +159,33 @@ Back up this folder regularly via your OneDrive for Business sync folder
 | <!-- Add team member --> | <!-- Role --> | <!-- email@example.com --> | <!-- Notes --> |
 ```
 
-### followups.md
+### Project-Level Files
+
+Only created when a project name is provided.
+
+#### README.md — `~/customer-engagements/{customer-slug}/projects/{project-slug}/README.md`
 
 ```markdown
-# Follow-ups — {name}
+# {project-name}
+
+**Customer:** {customer-name}
+**Project type:** <!-- PoC | Pilot | ADS | Engagement | Workshop -->
+**Start date:** {YYYY-MM-DD}
+**Status:** Active
+
+## Overview
+
+<!-- Brief description of this specific project/engagement. -->
+
+## Key Links
+
+<!-- Project-specific links: repos, dashboards, shared docs, etc. -->
+```
+
+#### followups.md — `~/customer-engagements/{customer-slug}/projects/{project-slug}/followups.md`
+
+```markdown
+# Follow-ups — {project-name} ({customer-name})
 
 ## Open
 
@@ -141,14 +202,14 @@ Back up this folder regularly via your OneDrive for Business sync folder
 
 ## Step 4: Initialize Git Repo with Push-Blocking Hook
 
-**Initialize git:**
+**Initialize git** (skip if `.git/` already exists in the customer folder):
 
 ```bash
-cd ~/customer-engagements/{slug}
+cd ~/customer-engagements/{customer-slug}
 git init
 ```
 
-**Create the pre-push hook** that blocks all pushes:
+**Create the pre-push hook** that blocks all pushes.
 
 Write the following to `.git/hooks/pre-push`:
 
@@ -171,38 +232,86 @@ exit 1
 **Make the hook executable:**
 
 ```bash
-chmod +x ~/customer-engagements/{slug}/.git/hooks/pre-push
+chmod +x ~/customer-engagements/{customer-slug}/.git/hooks/pre-push
 ```
 
-**Create initial commit:**
+**Create a commit covering whatever was created:**
 
 ```bash
-cd ~/customer-engagements/{slug}
+cd ~/customer-engagements/{customer-slug}
 git add -A
-git commit -m "Initial scaffold for {name} engagement"
+git commit -m "Initial scaffold for {customer-name} engagement"
+```
+
+If a project was added to an existing customer repo, use:
+
+```bash
+git add -A
+git commit -m "Add project: {project-name}"
 ```
 
 ## Step 5: Print Summary
 
-After successful scaffolding, present a summary to the user:
+Adapt the summary based on what was created.
+
+### Customer + Project Created
 
 ```
-✅ Customer engagement folder created
+✅ Customer engagement workspace created
 
-📁 Path: ~/customer-engagements/{slug}/
-📄 Files created:
+📁 Customer: ~/customer-engagements/{customer-slug}/
+📄 Customer-level files:
    - README.md (engagement overview + privacy notice)
    - stakeholders.md (contact tracking table)
+
+📂 Project: ~/customer-engagements/{customer-slug}/projects/{project-slug}/
+📄 Project-level files:
+   - README.md (project scope, type, status)
    - followups.md (open/closed action items)
 📂 Directories:
    - meetings/ (meeting prep briefs and notes)
    - decisions/ (architectural and project decisions)
    - architecture/ (diagrams and technical docs)
+
 🔒 Git: Initialized with push-blocking pre-push hook
-📦 Commit: "Initial scaffold for {name} engagement"
+📦 Commit: "Initial scaffold for {customer-name} engagement"
 
 💡 Reminder: Back up this folder via your OneDrive for Business sync folder
    (typically ~/OneDrive - <YourCompany>/ — adjust to your local path).
+```
+
+### Customer Only Created (No Project)
+
+```
+✅ Customer engagement workspace created
+
+📁 Customer: ~/customer-engagements/{customer-slug}/
+📄 Files created:
+   - README.md (engagement overview + privacy notice)
+   - stakeholders.md (contact tracking table)
+🔒 Git: Initialized with push-blocking pre-push hook
+📦 Commit: "Initial scaffold for {customer-name} engagement"
+
+💡 Run `/customer-repo {customer-name}/project-name` to add a project.
+
+💡 Reminder: Back up this folder via your OneDrive for Business sync folder
+   (typically ~/OneDrive - <YourCompany>/ — adjust to your local path).
+```
+
+### Project Added to Existing Customer
+
+```
+✅ Project added to {customer-name}
+
+📂 Project: ~/customer-engagements/{customer-slug}/projects/{project-slug}/
+📄 Files created:
+   - README.md (project scope, type, status)
+   - followups.md (open/closed action items)
+📂 Directories:
+   - meetings/ (meeting prep briefs and notes)
+   - decisions/ (architectural and project decisions)
+   - architecture/ (diagrams and technical docs)
+📦 Commit: "Add project: {project-name}"
 ```
 
 ## Error Handling
@@ -210,9 +319,11 @@ After successful scaffolding, present a summary to the user:
 | Scenario | Behavior |
 |----------|----------|
 | `~/customer-engagements/` does not exist | Create it with `mkdir -p`. Continue. |
-| Customer folder already exists | List contents. Offer to fill gaps only. Do not overwrite. |
-| Customer folder exists and is complete | Report "Folder already fully scaffolded." Show the file listing. Stop. |
+| Customer folder already exists | List contents. Offer to fill gaps or add a project. Do not overwrite. |
+| Customer folder exists and is complete (no project requested) | Report "Folder already fully scaffolded." List existing projects. Ask if they want to add a project. |
+| Customer + project both already exist and are complete | Report "Project '{project-name}' is already fully scaffolded under {customer-name}." Show the file listing. Stop. |
 | `git init` fails | Warn the user but continue — the folder and files are still usable without git. |
 | `git commit` fails | Inform the user. The files are written; only versioning is missing. |
 | User provides empty or invalid customer name | Ask again. Do not proceed with an empty slug. |
+| User provides empty project name after `/` | Treat as customer-only. Ignore the trailing slash. |
 | Disk space or permission error on write | Report the error and stop. Do not partially scaffold. |
