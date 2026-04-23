@@ -217,12 +217,15 @@ For each registered work repo:
 
 ```bash
 cd <repo-path> && git --no-pager log \
-  --format="%h %s" \
+  --format="%h %aI %s" \
   --since="<target-date>T00:00:00" \
   --until="<target-date+1>T00:00:00" \
   --author="$(git config user.email)" \
   2>/dev/null
 ```
+
+**Important:** The `%aI` format gives ISO 8601 author date — needed for duration
+calculation (time span from first to last commit).
 
 **Important:** Filter by `--author` to only count the user's own commits, not
 collaborators. Use `git config user.email` from the repo, or fall back to the
@@ -436,7 +439,49 @@ use the project's `default_activity_type` as tiebreaker.
 "Architecture Design Session", not "Design") so `/crm-activity-sync` can map it
 directly to the `msp_taskcategory` value without ambiguity.
 
-### 3c. Generate Summary
+### 3c. Estimate Duration
+
+Calculate the total duration in **minutes** for the day's activity. This is written
+to `activity-log.md` and consumed by `/crm-activity-sync` to populate
+`actualdurationminutes` on the CRM task.
+
+**Duration estimation rules by source:**
+
+| Source | How to estimate | Example |
+|---|---|---|
+| **Calendar meeting** | Exact: `end - start` from event | 60 min meeting → 60 min |
+| **Ad-hoc Teams call** | From `systemEventMessage` timestamp pairs: `end_ts - start_ts`. If only one pair detected, minimum 10 min | Two calls, 8 min + 15 min → 23 min |
+| **SSP text discussion** (no call) | Estimate 5 min per substantive message exchange (back-and-forth) | 4 messages exchanged → 20 min |
+| **Git commits** | Time span from first to last commit of the day: `last_commit_time - first_commit_time`. Minimum 30 min if only 1 commit. If spread > 6 hours, cap at 6 hours (assumes breaks) | First commit 09:15, last 14:30 → 315 min (5h15m) |
+| **Sent email** (PG/customer) | 15 min per qualifying email (composing a technical email) | 2 PG emails → 30 min |
+
+**Aggregation rules:**
+- **Don't double-count overlapping time.** If a meeting runs 10:00-11:00 and
+  commits span 09:00-14:00, the meeting time is already within the commit span.
+  Use the larger of: commit span vs sum of meetings.
+- **Formula:** `total_duration = max(commit_time_span, sum_of_meetings) + ssp_call_duration + ssp_text_time + email_time`
+- **But:** if meetings and commits overlap, don't add meetings separately — they're
+  part of the same work block. Only add meetings that fall **outside** the commit
+  time span.
+- **Minimum:** 15 min (even a single email counts as some work).
+- **Maximum:** 480 min (8 hours) per day per project. If calculated duration exceeds
+  this, cap at 480 and note "Duration capped at 8h" in the log.
+- **Round** to nearest 15 min for CRM (e.g., 47 min → 45 min, 53 min → 60 min).
+
+**Write to activity-log.md:**
+
+The `**Duration:**` line goes after `**Sources:**`:
+
+```
+**Type:** Architecture Design Session
+**Sources:** repo (3 commits), ssp-chat (4 calls, 8 messages), email (1 PG thread)
+**Duration:** 285 min (4h 45m) — repo span 3h, 4 calls 45m, 1 email 15m
+```
+
+The breakdown after the total is informational — helps the user understand and
+override if needed.
+
+### 3d. Generate Summary
 
 Write a concise 2–4 sentence summary combining all evidence:
 
@@ -486,6 +531,7 @@ entry for that date (find the `## <date>` header, delete everything until the ne
 
 **Type:** PoC/Pilot
 **Sources:** repo (3 commits), ssp-chat (4 calls, 8 messages), email (1 PG thread)
+**Duration:** 285 min (4h 45m) — repo span 3h, 4 calls 45m, 1 email 15m
 
 ### Repo Work
 - 3 commits in ~/SASE: secrets management design (area 12), SKU families recommendation
@@ -514,6 +560,7 @@ ephemeral storage assessment, LB role clarification. 4 ad-hoc calls with SSP
 
 **Type:** Architecture Design Session
 **Sources:** repo (21 commits)
+**Duration:** 480 min (8h) — repo span 09:15-17:45 (capped at 8h)
 
 ### Repo Work
 - 21 commits in ~/SASE: PoP topology, traffic flow diagrams (6 scenarios),
