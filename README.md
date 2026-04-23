@@ -18,7 +18,7 @@ These skills bridge the gap between Microsoft 365 (where customer work happens) 
 ### macOS / Linux (one command)
 
 ```bash
-git clone <this-repo-url> ~/customer-skills
+git clone https://github.com/roie9876/clawpilot-skills.git ~/customer-skills
 cd ~/customer-skills
 bash scripts/install.sh
 ```
