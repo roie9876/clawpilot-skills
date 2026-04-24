@@ -812,6 +812,89 @@ fabric design. 21 commits.
    git commit -m "activity-log: {date} — {activity-type} ({sources summary})"
    ```
 
+## Step 5b: Write communications/ (detailed chat & email records)
+
+In addition to the summary in `activity-log.md`, write the **full relevant content**
+of text-based sources to the `communications/` folder. This preserves the actual
+messages for reference, search, and audit — while `activity-log.md` has the summary.
+
+### File naming convention
+
+One file per source per date:
+
+```
+communications/{date}-{source-type}.md
+```
+
+Examples:
+- `communications/2026-04-23-customer-chat.md`
+- `communications/2026-04-23-ssp-chat.md`
+- `communications/2026-04-23-email-pg.md`
+
+### File format for chat records
+
+```markdown
+# {Source Type} Summary — {Month Day, Year}
+
+**Chat:** {chat topic or "(unnamed) member list"}
+**Participants:** {external member name (email)}, {other members}
+**Messages:** {N} relevant ({M} filtered as off-topic) | **Duration:** ~{X} min
+
+---
+
+## Key Topics
+
+### 1. {Topic Title}
+{2-4 sentence summary of what was discussed, decided, or raised. Include who
+said what when it matters. Capture technical specifics — architecture choices,
+numbers, product names, blockers — not just "they discussed networking".}
+
+### 2. {Topic Title}
+{Summary...}
+
+## Action Items
+- [ ] {Who} to {do what} (re: {topic context})
+```
+
+**Summary writing rules:**
+- **Summarize, don't copy-paste.** Group related messages into topics. Write a
+  coherent narrative of what was discussed, not a message-by-message transcript.
+- **Preserve technical specifics.** Don't genericize. "Yafim compiled DPDK with
+  MANA driver" is better than "discussed compilation progress".
+- **Extract action items.** Any commitment, request, or next step mentioned in
+  the conversation becomes a checkbox item.
+- **Include who.** Name the person who raised a point, made a decision, or took
+  an action — this matters for follow-up.
+- **Language.** Write summaries in English even if the conversation was in Hebrew.
+  Preserve technical terms and proper nouns in their original form.
+
+### File format for email records
+
+```markdown
+# Email Coordination — {Month Day, Year}
+
+---
+
+### {HH:MM} — To: {recipients}
+**Subject:** {subject}
+{email preview/body excerpt — relevant portions only}
+```
+
+### Writing rules for communications/
+
+1. **Only write for sources with relevant content.** No file for a source that had
+   zero relevant messages after classification.
+2. **Only include messages classified as Relevant** in Step 2f. Off-topic messages
+   are silently excluded. Note the filtered count in the header.
+3. **Idempotent.** If the file already exists for that date+source, skip it. If
+   re-logging, replace it.
+4. **Commit together** with the activity-log.md entry:
+   ```bash
+   cd ~/customer-engagements/{customer}
+   git add projects/{project}/activity-log.md projects/{project}/communications/
+   git commit -m "activity-log: {date} — {activity-type} ({sources summary})"
+   ```
+
 ---
 
 ## Step 6: Report
