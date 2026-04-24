@@ -73,8 +73,16 @@ If a project name was also provided, create the project structure too:
 ```bash
 mkdir -p ~/customer-engagements/{customer-slug}/projects/{project-slug}/meetings
 mkdir -p ~/customer-engagements/{customer-slug}/projects/{project-slug}/decisions
-mkdir -p ~/customer-engagements/{customer-slug}/projects/{project-slug}/architecture
 mkdir -p ~/customer-engagements/{customer-slug}/projects/{project-slug}/communications
+```
+
+**Conditionally create `architecture/`:** Only if the project has NO registered
+`work_repos` in `crm-mapping.json`. If a work repo exists, the architecture
+artifacts live there — creating `architecture/` would be redundant.
+
+```bash
+# Only if no work_repo is registered for this project:
+mkdir -p ~/customer-engagements/{customer-slug}/projects/{project-slug}/architecture
 ```
 
 ### Case B: Customer folder ALREADY exists
@@ -107,9 +115,14 @@ mkdir -p ~/customer-engagements/{customer-slug}/projects/{project-slug}/communic
 │   │   ├── followups.md   ← action items for this project
 │   │   ├── meetings/      ← meeting prep briefs and notes
 │   │   ├── decisions/     ← architectural and project decisions
-│   │   ├── architecture/  ← diagrams and technical docs
-│   │   └── communications/ ← project-specific chat threads, key email exchanges
+│   │   ├── communications/ ← project-specific chat summaries, key email exchanges
+│   │   └── architecture/  ← (only if no work_repo registered) diagrams and technical docs
 ```
+
+**Design principle:** `customer-engagements/` is the **relationship layer** — activity
+logs, communications, meetings, follow-ups, decisions. When a project has a dedicated
+work repo (e.g., `~/SASE/`), that repo IS the architecture source of truth.
+`architecture/` is only created for lightweight engagements with no work repo.
 
 ## Step 3: Populate Template Files
 
@@ -277,8 +290,8 @@ Adapt the summary based on what was created.
 📂 Directories:
    - meetings/ (meeting prep briefs and notes)
    - decisions/ (architectural and project decisions)
-   - architecture/ (diagrams and technical docs)
-   - communications/ (project-specific chat threads, key email exchanges)
+   - communications/ (project-specific chat summaries, key email exchanges)
+   - architecture/ (only if no work_repo — diagrams and technical docs)
 
 🔒 Git: Initialized with push-blocking pre-push hook
 📦 Commit: "Initial scaffold for {customer-name} engagement"
@@ -319,8 +332,8 @@ Adapt the summary based on what was created.
 📂 Directories:
    - meetings/ (meeting prep briefs and notes)
    - decisions/ (architectural and project decisions)
-   - architecture/ (diagrams and technical docs)
-   - communications/ (project-specific chat threads, key email exchanges)
+   - communications/ (project-specific chat summaries, key email exchanges)
+   - architecture/ (only if no work_repo — diagrams and technical docs)
 📦 Commit: "Add project: {project-name}"
 ```
 
