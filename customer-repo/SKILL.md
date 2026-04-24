@@ -65,6 +65,7 @@ Create the customer-level structure:
 
 ```bash
 mkdir -p ~/customer-engagements/{customer-slug}
+mkdir -p ~/customer-engagements/{customer-slug}/communications
 ```
 
 If a project name was also provided, create the project structure too:
@@ -73,6 +74,7 @@ If a project name was also provided, create the project structure too:
 mkdir -p ~/customer-engagements/{customer-slug}/projects/{project-slug}/meetings
 mkdir -p ~/customer-engagements/{customer-slug}/projects/{project-slug}/decisions
 mkdir -p ~/customer-engagements/{customer-slug}/projects/{project-slug}/architecture
+mkdir -p ~/customer-engagements/{customer-slug}/projects/{project-slug}/communications
 ```
 
 ### Case B: Customer folder ALREADY exists
@@ -98,13 +100,15 @@ mkdir -p ~/customer-engagements/{customer-slug}/projects/{project-slug}/architec
 ~/customer-engagements/{customer-slug}/
 ├── README.md              ← customer-level overview
 ├── stakeholders.md        ← shared across all projects
+├── communications/        ← customer-level chat threads, email exchanges, communication history
 ├── projects/
 │   ├── {project-slug}/
 │   │   ├── README.md      ← project scope, status, links
 │   │   ├── followups.md   ← action items for this project
 │   │   ├── meetings/      ← meeting prep briefs and notes
 │   │   ├── decisions/     ← architectural and project decisions
-│   │   └── architecture/  ← diagrams and technical docs
+│   │   ├── architecture/  ← diagrams and technical docs
+│   │   └── communications/ ← project-specific chat threads, key email exchanges
 ```
 
 ## Step 3: Populate Template Files
@@ -263,6 +267,8 @@ Adapt the summary based on what was created.
 📄 Customer-level files:
    - README.md (engagement overview + privacy notice)
    - stakeholders.md (contact tracking table)
+📂 Directories:
+   - communications/ (chat threads, email exchanges, communication history)
 
 📂 Project: ~/customer-engagements/{customer-slug}/projects/{project-slug}/
 📄 Project-level files:
@@ -272,6 +278,7 @@ Adapt the summary based on what was created.
    - meetings/ (meeting prep briefs and notes)
    - decisions/ (architectural and project decisions)
    - architecture/ (diagrams and technical docs)
+   - communications/ (project-specific chat threads, key email exchanges)
 
 🔒 Git: Initialized with push-blocking pre-push hook
 📦 Commit: "Initial scaffold for {customer-name} engagement"
@@ -289,6 +296,8 @@ Adapt the summary based on what was created.
 📄 Files created:
    - README.md (engagement overview + privacy notice)
    - stakeholders.md (contact tracking table)
+📂 Directories:
+   - communications/ (chat threads, email exchanges)
 🔒 Git: Initialized with push-blocking pre-push hook
 📦 Commit: "Initial scaffold for {customer-name} engagement"
 
@@ -311,6 +320,7 @@ Adapt the summary based on what was created.
    - meetings/ (meeting prep briefs and notes)
    - decisions/ (architectural and project decisions)
    - architecture/ (diagrams and technical docs)
+   - communications/ (project-specific chat threads, key email exchanges)
 📦 Commit: "Add project: {project-name}"
 ```
 

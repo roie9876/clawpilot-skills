@@ -1,13 +1,13 @@
 ---
 name: daily-activity-log
-description: "Scan work repos (git), calendar events, and PG/engineering emails to build a structured daily activity log in customer-engagements. Writes activity-log.md per project as the source of truth for CRM sync and engagement tracking. Triggers include: 'daily activity', 'activity log', 'log my work', 'what did I do', 'sync activity', 'daily sync', 'update activity log', or any request to capture the day's SE work into customer-engagements."
+description: "Scan work repos (git), calendar events, PG/engineering emails, and Teams chats (SSP + customer) to build a structured daily activity log in customer-engagements. Writes activity-log.md per project as the source of truth for CRM sync and engagement tracking. Triggers include: 'daily activity', 'activity log', 'log my work', 'what did I do', 'sync activity', 'daily sync', 'update activity log', or any request to capture the day's SE work into customer-engagements."
 ---
 
 # /daily-activity-log — Daily Activity Log Builder
 
-Scan multiple data sources — work repos (git history), M365 calendar, and
-PG/engineering emails — to build a structured daily activity summary per
-customer project. Writes `activity-log.md` in each project's
+Scan multiple data sources — work repos (git history), M365 calendar,
+PG/engineering emails, and Teams chats (both SSP and direct customer) — to build
+a structured daily activity summary per customer project. Writes `activity-log.md` in each project's
 customer-engagements folder, making customer-engagements the single source of
 truth for downstream consumers like `/crm-activity-sync`.
 
@@ -20,6 +20,7 @@ truth for downstream consumers like `/crm-activity-sync`.
 - **Preserve source language.** Commit messages, email subjects, and meeting titles stay in their original language.
 - **Graceful degradation.** Each data source can fail independently. If git is available but calendar isn't, log what you have. Note missing sources.
 - **Classify, don't just list.** Each daily entry gets a **Task Category** classification based on the evidence. The category must match one of the 20 CRM `msp_taskcategory` values. The skill auto-classifies using signal keywords, but the user can override to any category during interactive mode or via the `default_activity_type` in `crm-mapping.json`.
+- **Relevance-only content.** Every piece of text-based evidence (Teams messages, email body, meeting notes) must pass a **semantic relevance check** before being logged. You (the LLM executing this skill) read each message and judge whether it is project-related or off-topic. This is NOT a keyword filter — it is your semantic understanding of context. Personal chat, jokes, politics, social conversation, weekend plans, food, sports, and any off-topic messages are silently excluded — even if they appear in a customer or SSP chat. Only project-related business and technical content is logged. See "Relevance Classification" section below.
 
 ### CRM Task Categories (all 20)
 
@@ -91,6 +92,10 @@ been run yet, it will trigger the setup flow (see crm-activity-sync Step 1).
 | `/daily-activity-log add-repo <customer>/<project> <path>` | Register a work repo for a project |
 | `/daily-activity-log remove-repo <customer>/<project> <path>` | Unregister a work repo |
 | `/daily-activity-log repos` | List all registered work repo mappings |
+| `/daily-activity-log add-domain <customer> <domain>` | Register an email domain for a customer (e.g., `checkpoint checkpoint.com`) |
+| `/daily-activity-log domains` | List all customer domain mappings |
+| `/daily-activity-log discover-chats` | Scan recent Teams chats to auto-discover customer conversations |
+| `/daily-activity-log customer-chats` | List all cached customer chat IDs |
 
 ## File Locations
 
@@ -170,6 +175,72 @@ they cover. The 1:1 chat ID is resolved at runtime via
 | `/daily-activity-log add-group-chat <customer>/<project> <chat-id> <topic>` | Register a group chat for scanning |
 | `/daily-activity-log remove-group-chat <customer>/<project> <chat-id>` | Unregister a group chat |
 
+## Config: Customer Domains & Chat Discovery
+
+Customer email domains are stored in `crm-mapping.json` per customer under a
+top-level `domains` array. This is the primary mechanism for matching Teams chats
+to customers:
+
+```json
+{
+  "domains": ["checkpoint.com"],
+  "customer_chat_ids": [
+    {
+      "id": "19:abc123...@unq.gbl.spaces",
+      "type": "oneOnOne",
+      "topic": "John Smith (CheckPoint)",
+      "members": ["john.smith@checkpoint.com"],
+      "discovered": "2026-04-24"
+    },
+    {
+      "id": "19:def456...@thread.v2",
+      "type": "group",
+      "topic": "SASE Architecture Review",
+      "members": ["john.smith@checkpoint.com", "kobishitrit@microsoft.com"],
+      "discovered": "2026-04-24"
+    }
+  ],
+  "projects": { ... }
+}
+```
+
+**Domain registration rules:**
+- Each customer can have one or more domains (e.g., `["checkpoint.com", "checkpoint.co.il"]`).
+- Domains are matched against the email part after `@` in Teams chat member addresses.
+- Register via `/daily-activity-log add-domain <customer> <domain>` or auto-discover.
+- If `domains` is empty or missing, the customer is skipped during chat discovery.
+
+**Customer chat discovery flow** (`/daily-activity-log discover-chats`):
+
+1. Collect all known `customer_domains → customer` mappings from all `crm-mapping.json` files.
+2. Call `m365_list_chats(limit: 50, expand: "members")` to get recent chats with member info.
+   **Important:** Use `m365_list_chats` with `expand: "members"`, NOT `m365_search_chats`.
+   Search only matches topic names and will miss unnamed chats or chats where the
+   topic doesn't contain the customer name. Member-based scanning catches everything.
+3. For each chat, check if any member's email domain matches a known customer domain.
+   This catches: 1:1 chats with customer contacts, named group chats, AND unnamed
+   group chats — as long as the customer member's email domain is registered.
+4. If match → cache the chat entry in that customer's `crm-mapping.json` under `customer_chat_ids[]`.
+   For unnamed chats, generate a descriptive topic like "(unnamed) member1, member2".
+5. Skip chats that are already cached (match by `id`).
+6. Report: "Discovered N new customer chats: {customer} — {topic/member}."
+
+**Pagination:** If the user has many chats, page through using `skipToken` from the
+response. Scan at least 100 chats (2 pages of 50) to ensure good coverage.
+
+**Auto-discovery during daily runs:**
+- Run discovery at the start of EVERY daily run (not just when `customer_chat_ids`
+  is empty). New customer chats may appear at any time.
+- Discovery only runs once per skill invocation (not per date in range mode).
+- Cache results immediately so subsequent dates in the same run benefit.
+- Scan at least 50 recent chats per run. This is fast (single API call).
+
+**Manual fallback:**
+- If auto-discovery misses a chat (e.g., member uses a personal email, domain is
+  unusual), the user can manually note the chat ID and register it. But unlike SSP
+  chats and group chats, there is no separate manual-add command — just edit
+  `crm-mapping.json` directly or let discovery handle it.
+
 ---
 
 ## Step 0: Determine Target Date(s)
@@ -202,8 +273,9 @@ independently, in chronological order.
 3. Build a lookup table:
    - `repo_path → { customer, project }` — maps each registered repo to its project.
    - `keyword → { customer, project }` — maps subject keywords to projects.
-   - `customer_domains → { customer }` — maps email domains to customers (from stakeholders.md).
+   - `customer_domains → { customer }` — maps email domains to customers (from `crm-mapping.json` `domains[]` field, falling back to `stakeholders.md`).
    - `ssp_email → { customer[], chat_id }` — maps SSPs to their customers and cached chat IDs.
+   - `customer_chat_ids → { customer, chat_id, members[] }` — maps cached customer Teams chats to their customer (from `crm-mapping.json` `customer_chat_ids[]`).
 
 ---
 
@@ -346,12 +418,14 @@ known SSPs.
    pairs of consecutive systemEventMessages as one call. Each pair typically has
    timestamps ~seconds apart (start + end).
 
-4. **Extract technical context.** From the non-system text messages on the same date:
-   - Filter OUT scheduling chatter: messages that are purely coordination like
-     "זמין?", "פנוי?", "available?", "בפגישה", "שניה", "ok", "👍", single emoji,
-     or messages shorter than 10 characters with no technical content.
-   - KEEP messages that contain technical discussion: questions about architecture,
-     infrastructure, pricing, customer requirements, PG coordination, etc.
+4. **Extract technical context.** From the non-system text messages on the same date,
+   apply the **Relevance Classification** (see Step 2f). For each message:
+   - First apply the quick scheduling filter: messages that are purely coordination
+     like "זמין?", "פנוי?", "available?", "בפגישה", "שניה", "ok", "👍", single emoji,
+     or messages shorter than 10 characters → classify as **Scheduling**, drop.
+   - For all remaining messages, apply **semantic relevance check**: read the content
+     and classify as **Relevant** (technical/business/project) or **Off-topic**
+     (personal, jokes, politics, social). Only include **Relevant** messages.
    - Preserve original language (Hebrew, English, mixed).
 
 5. **Map to customer/project:**
@@ -382,6 +456,129 @@ for this source.
 - A day with technical text messages but no calls → still log. SSP text coordination
   is also customer work (e.g., answering SSP questions about the design async).
 
+### 2e. Customer Teams Chat (Direct Customer Communication)
+
+Direct Teams conversations with customer contacts — 1:1 chats and group chats
+that include external customer members. Unlike SSP chats (2d) which are between
+internal Microsoft people, these are conversations directly with the customer.
+
+**For each customer that has `customer_chat_ids[]` in `crm-mapping.json`:**
+
+1. **Iterate cached chats.** For each entry in `customer_chat_ids[]`:
+
+2. **Pull messages for target date:**
+   ```
+   m365_list_chat_messages(chatId: "<chat-id>", limit: 50)
+   ```
+   Filter to messages where `createdDateTime` falls within the target date (in user's
+   timezone). Paginate with `skipToken` if needed to cover the full day.
+
+3. **Detect calls.** Same logic as SSP chats: messages with
+   `content: "<systemEventMessage/>"` and `type: "unknownFutureValue"` are Teams
+   call events. Count pairs as one call.
+
+4. **Extract content.** From the non-system text messages on the same date,
+   apply the **Relevance Classification** (see Step 2f). Same process as SSP chats:
+   - Quick scheduling filter first (short/emoji/coordination → drop).
+   - Then **semantic relevance check** on remaining messages: read each one and
+     classify as **Relevant** (project work) or **Off-topic** (personal/social).
+   - Only include **Relevant** messages in the log.
+   - Preserve original language.
+
+5. **Map to project:**
+   - Check if the chat's `members[]` domains match a specific project's
+     `subject_keywords` from the message content.
+   - If the customer has only one project → assign directly.
+   - If multiple projects exist → scan message content against each project's
+     `subject_keywords` to find the best match.
+   - If ambiguous → in interactive mode, ask the user. In automated mode, assign
+     to the customer's default project (first in `crm-mapping.json`).
+
+6. **Summarize.** Group messages into topics:
+   - Extract key discussion points.
+   - Note document shares, links, images.
+   - Count: calls, substantive messages, and which members participated.
+
+**If a customer has `domains` but no `customer_chat_ids`:**
+- Run auto-discovery (see Config section above) before scanning.
+- Cache results and proceed with scanning.
+
+**If zero calls AND zero substantive messages on the target date** → skip, no
+entry for this source.
+
+**Important filtering rules:**
+- Only scan chats cached in `customer_chat_ids[]`. Never scan all chats.
+- Both your messages and customer messages count as evidence.
+- A day with only a Teams call to the customer (no text) → still log as
+  "customer call" — the call itself is engagement evidence.
+- A day with only text messages (no call) → still log. Async customer
+  communication is also work.
+- If the same customer chat already contributed to a calendar event match
+  (e.g., a scheduled Teams meeting that shows up in both calendar and chat),
+  the calendar event takes precedence for that time block. But additional
+  text messages outside the meeting window still count as separate evidence.
+- Group chats with mixed internal + customer members: classify as customer
+  chat (not SSP chat), since the customer is directly participating.
+
+---
+
+## Step 2f: Relevance Classification (applies to ALL text sources)
+
+Before any text-based evidence (Teams messages, email bodies, meeting chat) is
+included in the activity log, apply **semantic relevance classification**. This is
+not a keyword filter — it is an LLM judgment call made by you (the agent executing
+this skill) when you read each piece of content.
+
+### Classification Rules
+
+For each message, email, or text excerpt, classify as one of:
+
+| Classification | Action | Examples |
+|---|---|---|
+| **Relevant** | Include in activity log | Architecture discussion, requirements, design decisions, technical questions, pricing, timelines, deliverables, PG coordination, blocker discussion, status updates, action items, document sharing (technical), meeting scheduling about project topics |
+| **Off-topic** | Silently exclude | Jokes, politics, sports, weekend plans, food, personal life, social chit-chat, memes, emoji-only reactions, holiday wishes, birthday messages, general small talk |
+| **Scheduling** | Exclude (already filtered) | "זמין?", "available?", "ok", "👍", "שניה", "בפגישה", single emoji, <10 chars |
+
+### How to Classify
+
+Read the message content and ask: **"Does this message contribute to understanding
+what work was done on the project?"**
+
+- If YES → **Relevant**. Include it.
+- If NO → **Off-topic**. Drop it silently. Do not mention it in the log.
+- If MIXED (e.g., starts with a joke then pivots to a technical question) →
+  **Relevant**. Include the technical part, summarize without the off-topic portion.
+
+### Where This Applies
+
+| Source | What gets classified | Notes |
+|---|---|---|
+| **SSP Teams chat (2d)** | Each non-system message | Replaces the old "scheduling chatter" blocklist with full semantic check |
+| **Customer Teams chat (2e)** | Each non-system message | Same semantic check |
+| **Sent emails (2c)** | Email subject + body preview | Already filtered by keyword + domain; relevance check is a second pass |
+| **Calendar events (2b)** | Meeting subject | Already filtered by attendees + keywords; generally all relevant |
+| **Git commits (2a)** | N/A — commits in registered repos are always relevant | No filter needed |
+| **Group chats** | Each non-system message | Same semantic check |
+
+### Counting Rules After Classification
+
+- **Only relevant messages count** toward the `substantive messages` total in the
+  Sources line (e.g., "customer-chat (1 call, 5 messages)" — those 5 are post-filter).
+- **Calls always count** regardless of message content — a Teams call to a customer
+  is work evidence even if the surrounding text is social.
+- **Duration estimation** uses only relevant message count (5 min per relevant
+  exchange, not per raw message).
+
+### Edge Cases
+
+| Case | Behavior |
+|---|---|
+| All messages in a chat on target date are off-topic | No entry from this source. The chat had no project-relevant activity. |
+| Chat has a call + only off-topic text messages | Log the call. Skip the messages. Entry says "1 call, no substantive messages." |
+| Message is in Hebrew/mixed language | Classify based on meaning, regardless of language. Technical Hebrew = relevant. |
+| Message references a shared document | Relevant — document sharing is work activity, even if the text is brief ("check this doc"). |
+| Ambiguous message (could be social or work) | When in doubt, include it. Better to over-log slightly than miss real work. |
+
 ---
 
 ## Step 3: Aggregate and Classify
@@ -404,6 +601,13 @@ evidence = {
     messages: [...],         // substantive messages (filtered)
     ssp_name: "...",         // SSP name
     chat_sources: [...]      // which chats contributed (1:1, group names)
+  },
+  customer_chat: {           // from 2e
+    calls: N,                // count of direct customer Teams calls
+    topics: [...],           // extracted discussion topics
+    messages: [...],         // substantive messages (filtered)
+    members: [...],          // customer member names who participated
+    chat_sources: [...]      // which chats contributed (1:1, group w/ customer)
   }
 }
 ```
@@ -420,7 +624,9 @@ table above. Use the **dominant signal** with this priority:
 | 3 | Customer meeting with "poc"/"pilot" keyword | PoC/Pilot |
 | 4 | Engineering escalation email (PG coordination on blocker) | Blocker Escalation |
 | 5 | SSP chat with "design"/"architecture" topics + calls | Architecture Design Session |
+| 5b | Customer chat with "design"/"architecture" topics + calls | Architecture Design Session |
 | 6 | SSP chat with "poc"/"pilot"/"testing" topics + calls | PoC/Pilot |
+| 6b | Customer chat with "poc"/"pilot"/"testing" topics + calls | PoC/Pilot |
 | 7 | "demo"/"showcase" keyword in meeting or commits | Demo |
 | 8 | "rfp"/"rfi" keyword | RFP/RFI |
 | 9 | "pricing"/"negotiate"/"commercial" keyword | Negotiate Pricing |
@@ -428,6 +634,7 @@ table above. Use the **dominant signal** with this priority:
 | 11 | Repo commits dominant prefix → match prefix to category (see 2a table) | Varies |
 | 12 | Internal-only meeting matching project keyword (no customer attendees) | Internal |
 | 13 | SSP chat (calls or technical messages, no other keyword match) | Customer Engagement |
+| 13b | Customer chat (calls or technical messages, no other keyword match) | Customer Engagement |
 | 14 | Customer meeting (generic, no keyword match) | Customer Engagement |
 | 15 | Engineering emails only (no meeting, no repo) | Architecture Design Session |
 | 16 | Project's `default_activity_type` from crm-mapping.json | Fallback |
@@ -452,6 +659,8 @@ to `activity-log.md` and consumed by `/crm-activity-sync` to populate
 | **Calendar meeting** | Exact: `end - start` from event | 60 min meeting → 60 min |
 | **Ad-hoc Teams call** | From `systemEventMessage` timestamp pairs: `end_ts - start_ts`. If only one pair detected, minimum 10 min | Two calls, 8 min + 15 min → 23 min |
 | **SSP text discussion** (no call) | Estimate 5 min per substantive message exchange (back-and-forth) | 4 messages exchanged → 20 min |
+| **Customer chat call** | Same as ad-hoc Teams call: `systemEventMessage` timestamp pairs. Minimum 10 min per call | 1 customer call, 22 min → 22 min |
+| **Customer chat text** (no call) | Estimate 5 min per substantive message exchange (same as SSP) | 6 messages exchanged → 30 min |
 | **Git commits** | Time span from first to last commit of the day: `last_commit_time - first_commit_time`. Minimum 30 min if only 1 commit. If spread > 6 hours, cap at 6 hours (assumes breaks) | First commit 09:15, last 14:30 → 315 min (5h15m) |
 | **Sent email** (PG/customer) | 15 min per qualifying email (composing a technical email) | 2 PG emails → 30 min |
 
@@ -459,7 +668,7 @@ to `activity-log.md` and consumed by `/crm-activity-sync` to populate
 - **Don't double-count overlapping time.** If a meeting runs 10:00-11:00 and
   commits span 09:00-14:00, the meeting time is already within the commit span.
   Use the larger of: commit span vs sum of meetings.
-- **Formula:** `total_duration = max(commit_time_span, sum_of_meetings) + ssp_call_duration + ssp_text_time + email_time`
+- **Formula:** `total_duration = max(commit_time_span, sum_of_meetings) + ssp_call_duration + ssp_text_time + customer_call_duration + customer_text_time + email_time`
 - **But:** if meetings and commits overlap, don't add meetings separately — they're
   part of the same work block. Only add meetings that fall **outside** the commit
   time span.
@@ -489,17 +698,18 @@ Write a concise 2–4 sentence summary combining all evidence:
 ```
 {Activity-type-verb} for {project-display-name} — {main topics from repo commits and/or meetings}.
 {If SSP calls: "{N} ad-hoc call(s) with SSP ({name}). Topics: {topic1}, {topic2}."}
+{If customer chat: "{N} call(s) + {M} messages with {customer-contact}. Topics: {topic1}, {topic2}."}
 {If engineering emails: "Coordinated with {PG-team} on {topic}."}
 {If meetings: "{N} meeting(s) with {customer/internal/PG}."}
 {Commit count if repo work: "{N} commits."}
 ```
 
-**Example with SSP calls:**
+**Example with SSP calls + customer chat:**
 ```
 Design work for SASE — SRv6 feasibility analysis, NAT GW topology,
 ephemeral storage assessment. 4 ad-hoc calls with SSP (Kobi Shitrit).
-Coordinated with Azure Networking PG (Brian Lehr) on SRv6 support.
-1 email to PG. 3 commits.
+1 call + 3 messages with customer (John Smith). Coordinated with
+Azure Networking PG (Brian Lehr) on SRv6 support. 1 email to PG. 3 commits.
 ```
 
 ---
@@ -530,8 +740,8 @@ entry for that date (find the `## <date>` header, delete everything until the ne
 ## 2026-04-23
 
 **Type:** PoC/Pilot
-**Sources:** repo (3 commits), ssp-chat (4 calls, 8 messages), email (1 PG thread)
-**Duration:** 285 min (4h 45m) — repo span 3h, 4 calls 45m, 1 email 15m
+**Sources:** repo (3 commits), ssp-chat (4 calls, 8 messages), customer-chat (1 call, 3 messages), email (1 PG thread)
+**Duration:** 315 min (5h 15m) — repo span 3h, 4 SSP calls 45m, 1 customer call 15m, 1 email 15m
 
 ### Repo Work
 - 3 commits in ~/SASE: secrets management design (area 12), SKU families recommendation
@@ -546,13 +756,20 @@ entry for that date (find the `## <date>` header, delete everything until the ne
   - Load Balancer role — clarification on what it's used for (not E-W, not N-S, not egress)
 - Also: coordinated PG outreach to Brian Lehr re SRv6
 
+### Customer Communication
+- 1 Teams call with John Smith (john.smith@checkpoint.com), 15 min
+- 3 messages exchanged — topics: deployment timeline confirmation, SRv6
+  alternative approach feedback, shared updated architecture diagram
+- Chat: "John Smith (CheckPoint)" (1:1)
+
 ### Engineering Coordination
 - Email to blehr@microsoft.com (Azure Networking PG): SRv6 requirements for SASE
 
 ### Summary
 Design work for SASE — SRv6 feasibility analysis, NAT GW topology,
 ephemeral storage assessment, LB role clarification. 4 ad-hoc calls with SSP
-(Kobi Shitrit). Coordinated with Azure Networking PG on SRv6 support. 3 commits.
+(Kobi Shitrit). 1 call + 3 messages with customer (John Smith). Coordinated
+with Azure Networking PG on SRv6 support. 3 commits.
 
 ---
 
@@ -653,6 +870,11 @@ If errors occur, include them in the summary.
 | Empty day (no evidence from any source) | No entry created. Report as "No activity detected." |
 | Very large commit count (>50) | Summarize at topic level, don't list individual commits. Show count only. |
 | Commit message has no prefix | Use project's `default_activity_type`. In the entry, list as "general" prefix. |
+| Customer chat found but no `domains` configured | Skip chat scanning for that customer. Report: "No domains configured for {customer} — run `/daily-activity-log add-domain`." |
+| Chat has both customer + SSP members | Classify as customer chat (2e), not SSP chat (2d). Customer participation takes precedence. |
+| Customer chat call overlaps with calendar meeting | Calendar event takes precedence for that time slot. Don't double-count the same meeting from both sources. |
+| Multiple customer chats match the same customer | Merge evidence from all chats into one entry per customer/project/date. |
+| Chat member domain doesn't match any customer | Skip — don't scan random external chats. |
 
 ---
 
@@ -690,6 +912,8 @@ missing). This skill shares its config with `/crm-activity-sync`.
 | Work repos | `crm-mapping.json` per customer | Registered manually |
 | SSP chat IDs | `crm-mapping.json` per customer | Resolved via `m365_create_chat_by_email` |
 | Group chat IDs | `crm-mapping.json` per project | Registered manually |
+| Customer domains | `crm-mapping.json` per customer `domains[]` | Registered via `add-domain` or auto-discovered from calendar |
+| Customer chat IDs | `crm-mapping.json` per customer `customer_chat_ids[]` | Auto-discovered via `discover-chats` or during daily runs |
 | Subject keywords | `crm-mapping.json` per project | Set during setup, editable |
 | Manager email (for filtering) | `config.json` | Auto-discovered via M365 Graph |
 | Work week days | `config.json` | Israel: Sun-Thu, configurable |
