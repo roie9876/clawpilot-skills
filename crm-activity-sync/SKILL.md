@@ -625,7 +625,7 @@ with a permissions error.
 
 **Parse duration from activity-log.md:** Extract the number from the `**Duration:**`
 line (e.g., `**Duration:** 285 min (4h 45m) — ...` → `285`). Pass as
-`actualdurationminutes`.
+`duration` (the tool maps it to `actualdurationminutes` internally).
 
 ```bash
 node ~/Documents/se-kanban-tracker/crm/run-tool.mjs create_task '{
@@ -634,12 +634,12 @@ node ~/Documents/se-kanban-tracker/crm/run-tool.mjs create_task '{
   "scheduledend": "2026-04-30T08:00:00Z",
   "milestoneId": "<milestone-guid>",
   "taskcategory": 861980005,
-  "actualdurationminutes": 285
+  "duration": 285
 }'
 ```
 
 **Duration field mapping:**
-- `actualdurationminutes` — standard CRM field on the `task` entity
+- `duration` — maps to `actualdurationminutes` CRM field internally
 - Value in minutes, rounded to nearest 15 by `/daily-activity-log`
 - If `**Duration:**` line is missing from activity-log.md (older entries), omit
   the field — CRM will use its default
