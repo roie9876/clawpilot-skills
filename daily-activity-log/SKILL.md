@@ -247,9 +247,13 @@ response. Scan at least 100 chats (2 pages of 50) to ensure good coverage.
 
 **Default:** Yesterday, adjusted for Israeli work week.
 - If today is Sunday → yesterday was Saturday (weekend) → use Thursday.
-- If today is Friday → yesterday was Thursday → use Thursday.
-- If today is Saturday → yesterday was Friday (weekend) → use Thursday.
-- Otherwise → use yesterday.
+- Otherwise → use yesterday (including Friday and Saturday — work can happen
+  on non-standard days; the skill logs whatever evidence it finds).
+
+**Note:** The old logic skipped Friday and Saturday entirely. This was wrong —
+SEs sometimes work on non-standard days (CritSits, deadlines, travel). The
+skill should always check yesterday. If no evidence is found, it reports
+"No activity detected" which is harmless. Missing real work is not.
 
 **Explicit date:** The user can provide a specific date or range.
 
@@ -276,12 +280,23 @@ independently, in chronological order.
    - `customer_domains → { customer }` — maps email domains to customers (from `crm-mapping.json` `domains[]` field, falling back to `stakeholders.md`).
    - `ssp_email → { customer[], chat_id }` — maps SSPs to their customers and cached chat IDs.
    - `customer_chat_ids → { customer, chat_id, members[] }` — maps cached customer Teams chats to their customer (from `crm-mapping.json` `customer_chat_ids[]`).
+   - `all_customer_names → [...]` — list of all known customer display names, slugs, and account names for content-based matching.
+   - `all_project_keywords → { keyword: { customer, project } }` — flattened keyword map across all customers/projects for content-based matching.
 
 ---
 
 ## Step 2: Collect Evidence
 
 For each target date, collect from all sources in parallel.
+
+**Source types:**
+- **2a.** Work Repo Git History (registered repos)
+- **2b.** Calendar Events (M365)
+- **2c.** Sent Emails (PG/Engineering + Customer)
+- **2d.** SSP Teams Chat (registered SSP chats)
+- **2e.** Customer Teams Chat (registered customer chats)
+- **2f.** Relevance Classification (filter for all text sources)
+- **2g.** Content-Based Chat Discovery (unmapped chats — LLM-driven)
 
 ### 2a. Work Repo Git History
 
@@ -507,7 +522,8 @@ internal Microsoft people, these are conversations directly with the customer.
 entry for this source.
 
 **Important filtering rules:**
-- Only scan chats cached in `customer_chat_ids[]`. Never scan all chats.
+- Scan chats cached in `customer_chat_ids[]` here. Unmapped chats are handled
+  by Step 2g (content-based discovery) — do NOT skip them entirely.
 - Both your messages and customer messages count as evidence.
 - A day with only a Teams call to the customer (no text) → still log as
   "customer call" — the call itself is engagement evidence.
@@ -519,6 +535,123 @@ entry for this source.
   text messages outside the meeting window still count as separate evidence.
 - Group chats with mixed internal + customer members: classify as customer
   chat (not SSP chat), since the customer is directly participating.
+
+---
+
+### 2g. Content-Based Chat Discovery (Unmapped Chats)
+
+**This is the most important discovery mechanism.** Steps 2d and 2e only scan
+chats that are pre-registered in `crm-mapping.json`. But customer work often
+happens in chats that were never registered: ad-hoc support cases (EXT tickets),
+1:1 with colleagues helping on customer issues, meeting chats from one-off calls,
+new group chats created mid-engagement.
+
+**The LLM (you) can read message content and understand which customer it relates
+to.** This step uses semantic analysis — not domain matching — to discover
+customer-relevant chats that other steps missed.
+
+#### Discovery Flow
+
+1. **Get recently active chats.**
+   ```
+   m365_list_chats(limit: 50, expand: ["members", "lastMessagePreview"])
+   ```
+   Filter to chats that had activity on any of the `target_dates[]`. Use
+   `lastUpdatedDateTime` as the initial filter (it's fast — no message reads yet).
+
+2. **Exclude already-scanned chats.** Remove chats that were already processed
+   by steps 2d (SSP chats) or 2e (registered customer chats). These are identified
+   by chat ID matching against `ssp_chat_ids` and `customer_chat_ids` in all
+   `crm-mapping.json` files. Also exclude 1:1 chats with the user's manager
+   (`config.user.manager.email`) — these are not customer work.
+
+3. **Quick triage each remaining chat.** For each unscanned chat with target-date
+   activity, read up to 20 messages from the target date:
+   ```
+   m365_list_chat_messages(chatId: "<id>", limit: 20)
+   ```
+   Filter messages to the target date (by `createdDateTime` in user's timezone).
+   If zero messages on the target date → skip.
+
+4. **LLM semantic classification.** For each chat with messages on the target
+   date, you (the LLM) read the messages and answer these questions:
+
+   a. **Is this customer-related work?** Look for:
+      - Customer names, project names, product names matching known customers
+      - Azure resource references (resource groups, subscriptions, VNets, PE)
+        that match customer environments
+      - Technical discussion tied to a known engagement (architecture, debugging,
+        deployment, CritSit)
+      - Support case context (EXT tickets, ICM incidents, CritSit)
+      - Colleague names known to work on specific customer accounts (from
+        `crm-mapping.json` SSP lists, stakeholders)
+      - Chat topic keywords ("כלל ביטוח", "checkpoint", "sase", etc.)
+
+   b. **Which customer and project?** Match against:
+      - `all_customer_names` — customer display names, slugs, account names
+      - `all_project_keywords` — subject keywords from all projects
+      - Member names cross-referenced with known stakeholders/SSPs
+      - Azure resource naming patterns (e.g., `rg-ai-clal-dev` → Clal Insurance)
+
+   c. **What type of activity?** Classify using the same CRM Task Category
+      signals as Step 3b.
+
+   If the answer to (a) is NO → skip. Not customer work.
+   If the answer to (a) is YES but (b) is ambiguous → in interactive mode, ask
+   the user. In automated mode, log to the best-guess customer and flag
+   "auto-classified — verify customer mapping."
+
+5. **Process matched chats.** For each chat classified as customer-related:
+   - Apply the same evidence extraction as Step 2e (calls, messages, topics,
+     relevance classification from Step 2f)
+   - Add the evidence to the appropriate `{ customer, project }` evidence bucket
+   - **Auto-cache** the chat in that customer's `crm-mapping.json` under
+     `customer_chat_ids[]` with `"source": "content-based"` so future runs
+     find it via Step 2e directly (faster, no re-classification needed)
+
+#### What This Catches That Domain-Based Discovery Misses
+
+| Scenario | Why domain-based fails | Content-based catches it |
+|---|---|---|
+| EXT support case (e.g., "EXT \| 2604230050000351") | Members are MSFT + support vendor (LTI Mindtree, Teknowledge). No customer domain. | Messages reference customer name, Azure resources, and project context |
+| 1:1 with internal colleague helping on customer issue | Both members are @microsoft.com | Messages contain customer resource groups, deployment errors, and project-specific terms |
+| Meeting chat from ad-hoc customer call | Meeting wasn't in registered chats. Members may all be internal if customer joined via phone | Chat topic or messages reference customer by name |
+| CritSit / ICM chat | Created by support, members are all internal + support vendor | ICM details, customer subscription IDs, resource names in messages |
+| Cross-team collaboration | Engineers from other teams helping. No customer member present | Discussion clearly about customer architecture, deployment, blockers |
+
+#### Performance Considerations
+
+- **This step runs AFTER steps 2a-2e.** It only scans chats not already covered.
+- **Quick exit:** Most chats are internal (team standup, org-wide, social). The
+  LLM can classify these in seconds by reading the topic + first few messages.
+  Only customer-related chats get full message extraction.
+- **Caching eliminates re-work.** Once a chat is auto-cached in `crm-mapping.json`,
+  future runs process it via Step 2e without needing LLM classification again.
+- **Limit:** Scan at most 50 unmapped chats per run. This is enough for daily
+  discovery. For backfill runs, page through more chats if needed.
+- **Parallel with other steps:** This step can run in parallel with Steps 2a-2e
+  since it targets different chats.
+
+#### Auto-Cache Format
+
+When a chat is auto-discovered via content-based classification, cache it in
+`crm-mapping.json` under `customer_chat_ids[]`:
+
+```json
+{
+  "id": "19:34791f8863eb455c860321ab3a702e08@thread.v2",
+  "type": "group",
+  "topic": "EXT | 2604230050000351",
+  "members": ["Ido Katz", "Scott Vickers", "Jayant Kumar"],
+  "discovered": "2026-04-25",
+  "source": "content-based",
+  "matched_by": "Messages reference Clal Insurance Azure resources (rg-ai-clal-dev-swe) and AI Foundry PE debugging"
+}
+```
+
+The `source: "content-based"` and `matched_by` fields distinguish auto-discovered
+chats from domain-matched ones. This helps the user audit and correct
+misclassifications if needed.
 
 ---
 
@@ -908,6 +1041,10 @@ Logged:
   ✅ CheckPoint / SASE — Design (21 repo commits)
   ✅ Clal Insurance / AI Search — Meeting Call (1 meeting, 14:00-15:30)
 
+Auto-discovered chats:
+  🔍 Clal Insurance — "EXT | 2604230050000351" (content-based: AI Foundry PE debugging)
+  🔍 Clal Insurance — 1:1 with Orel Yitzhakian (content-based: Bastion deployment for rg-ai-clal-dev-swe)
+
 Skipped (already logged):
   ⏭️ CheckPoint / SASE — April 21 already in activity-log.md
 
@@ -946,18 +1083,24 @@ If errors occur, include them in the summary.
 |---|---|
 | Repo has commits but project has no crm-mapping.json | Log anyway — activity-log.md is useful even without CRM |
 | Calendar returns no events | Fine — log repo work only |
-| M365 not signed in | Skip calendar + email. Log repo work only. Warn in report. |
+| M365 not signed in | Skip calendar + email + Teams chat. Log repo work only. Warn in report. |
 | Multiple repos for one project | Merge all commits into one entry. List each repo path in the "Repo Work" section. |
 | Repo has commits by someone else (pair programming) | `--author` filter ensures only user's commits are counted. If zero → skip. |
-| Weekend date | Warn: "{date} is a weekend. Log anyway?" In auto mode: skip. |
+| Weekend date | Log anyway — SEs sometimes work on non-standard days (CritSits, deadlines). If no evidence found, report "No activity detected." |
 | Empty day (no evidence from any source) | No entry created. Report as "No activity detected." |
 | Very large commit count (>50) | Summarize at topic level, don't list individual commits. Show count only. |
 | Commit message has no prefix | Use project's `default_activity_type`. In the entry, list as "general" prefix. |
-| Customer chat found but no `domains` configured | Skip chat scanning for that customer. Report: "No domains configured for {customer} — run `/daily-activity-log add-domain`." |
+| Customer chat found but no `domains` configured | Skip domain-based discovery for that customer, but content-based discovery (2g) may still find chats. |
 | Chat has both customer + SSP members | Classify as customer chat (2e), not SSP chat (2d). Customer participation takes precedence. |
 | Customer chat call overlaps with calendar meeting | Calendar event takes precedence for that time slot. Don't double-count the same meeting from both sources. |
 | Multiple customer chats match the same customer | Merge evidence from all chats into one entry per customer/project/date. |
-| Chat member domain doesn't match any customer | Skip — don't scan random external chats. |
+| Chat member domain doesn't match any customer | Don't skip — Step 2g (content-based) may still match it by reading messages. |
+| Unmapped chat references customer by name in content | Step 2g classifies it, extracts evidence, and auto-caches for future runs. |
+| Unmapped chat references Azure resources (RG, VNet, subscription) matching a customer | Step 2g matches resource naming patterns to customer environments. |
+| EXT / CritSit / ICM support case chat | Step 2g reads messages, matches customer by context, and logs as Tech Support or Blocker Escalation. |
+| 1:1 with colleague about customer work | Step 2g reads messages, detects customer-related content, and attributes to the correct customer. |
+| Content-based match is ambiguous (could be 2 customers) | Interactive: ask user. Automated: best-guess + flag "auto-classified — verify." |
+| Content-based discovers a completely new customer | Flag as "Unknown customer" in report. Do NOT auto-create customer-engagements folder. Ask user in interactive mode. |
 
 ---
 
