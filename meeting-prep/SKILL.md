@@ -32,13 +32,74 @@ Detect OS via `$IsWindows` (PowerShell) or `[ "$(uname)" = "Darwin" ]` / `[ "$(u
 - **One brief per meeting.** Output is both `.html` (RTL, dark-theme, auto-opened in Edge) and `.md` (for git). Path is deterministic: `~/customer-engagements/{slug}/projects/{project}/meetings/{date}-{subject-slug}.*`. If files already exist, ask whether to overwrite or append.
 - **Commit immediately.** After writing the brief, commit to git so it's versioned and findable.
 
+## Prerequisite Auto-Install
+
+Before running, verify all dependencies are present. **Install anything missing automatically.**
+
+### Required Sibling Skills
+
+This skill requires the following sibling skill from the same repository
+(`https://github.com/roie9876/clawpilot-skills`):
+
+| Skill | Purpose | Required? |
+|-------|---------|-----------|
+| `/customer-repo` | Customer engagement folder structure (`~/customer-engagements/`) | ✅ For storing prep briefs |
+
+Check if it is installed:
+
+```bash
+# macOS / Linux
+[ -f "$HOME/.copilot/skills/customer-repo/SKILL.md" ] && echo "✅ customer-repo" || echo "❌ customer-repo MISSING"
+```
+
+```powershell
+# Windows
+if (Test-Path "$HOME\.copilot\skills\customer-repo\SKILL.md") { "✅ customer-repo" } else { "❌ customer-repo MISSING" }
+```
+
+**If missing**, install all skills from the repository:
+
+1. Clone the repo (skip if already cloned):
+   ```bash
+   # macOS / Linux
+   [ -d "$HOME/customer-skills/.git" ] || git clone https://github.com/roie9876/clawpilot-skills.git "$HOME/customer-skills"
+   ```
+   ```powershell
+   # Windows
+   if (-not (Test-Path "$HOME\customer-skills\.git")) {
+       git clone https://github.com/roie9876/clawpilot-skills.git "$HOME\customer-skills"
+   }
+   ```
+
+2. Run the installer (idempotent — safe to re-run):
+   ```bash
+   # macOS / Linux
+   bash "$HOME/customer-skills/scripts/install.sh"
+   ```
+   ```powershell
+   # Windows
+   pwsh "$HOME\customer-skills\scripts\install.ps1"
+   ```
+
+3. Verify installed. If still missing, stop and report the error.
+
+### Required Tools
+
+| Tool | Check (POSIX) | Check (Windows) | Install (macOS) | Install (Windows) |
+|------|---------------|-----------------|-----------------|-------------------|
+| git | `git --version` | `Get-Command git` | Pre-installed | `winget install Git.Git` |
+
+### M365 Sign-In
+
+Check `m_m365_status`. If not signed in → call `m_m365_sign_in`.
+
+---
+
 ## Step 1: Identify the Target Meeting
 
 Ask the user which meeting to prepare for, or accept it from the prompt (e.g., "/meeting-prep Contoso sync tomorrow").
 
 **If the user names a specific meeting:**
-
-1. Call `m365_list_events(startDate, endDate, limit: 10)` with a date range covering the next 7 days.
 2. Match the user's description against event subjects (case-insensitive, partial match).
 3. If multiple matches, present a numbered list and ask the user to pick.
 

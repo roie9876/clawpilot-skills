@@ -68,12 +68,14 @@ back to the project's `default_activity_type` in `crm-mapping.json`.
 
 - **Detect unknown customers.** When a calendar event has external attendees whose domain doesn't match any existing `crm-mapping.json` customer, flag it. In interactive mode: ask whether it's a core customer, temp engagement, or not customer work. In automated mode: log the activity anyway (customer-engagements folder is source of truth if it exists) and send a Teams alert asking for classification.
 
-## Prerequisites
+## Prerequisite Auto-Install
 
-### Required Skills
+Before running, verify all dependencies are present. **Install anything missing automatically.**
 
-These skills must also be installed in Clawpilot (`~/.copilot/m-skills/`) for the
-full pipeline to work:
+### Required Sibling Skills
+
+This skill requires sibling skills from the same repository
+(`https://github.com/roie9876/clawpilot-skills`):
 
 | Skill | Purpose | Required? |
 |---|---|---|
@@ -81,14 +83,95 @@ full pipeline to work:
 | `/customer-repo` | Scaffolds `customer-engagements/` folder structure per customer | ✅ For initial setup |
 | `/msx-crm` | CRM query tools (`run-tool.mjs`) for milestone and opportunity lookups | ⚠️ Only if CRM sync is desired |
 
-### Required Tools & Infrastructure
+Check if each required skill is installed:
+
+```bash
+# macOS / Linux
+for skill in crm-activity-sync customer-repo msx-crm; do
+  [ -f "$HOME/.copilot/skills/$skill/SKILL.md" ] && echo "✅ $skill" || echo "❌ $skill MISSING"
+done
+```
+
+```powershell
+# Windows
+foreach ($skill in @('crm-activity-sync','customer-repo','msx-crm')) {
+    if (Test-Path "$HOME\.copilot\skills\$skill\SKILL.md") { "✅ $skill" } else { "❌ $skill MISSING" }
+}
+```
+
+**If ANY required skill is missing**, install all skills from the repository:
+
+1. Clone the repo (skip if already cloned):
+   ```bash
+   # macOS / Linux
+   [ -d "$HOME/customer-skills/.git" ] || git clone https://github.com/roie9876/clawpilot-skills.git "$HOME/customer-skills"
+   ```
+   ```powershell
+   # Windows
+   if (-not (Test-Path "$HOME\customer-skills\.git")) {
+       git clone https://github.com/roie9876/clawpilot-skills.git "$HOME\customer-skills"
+   }
+   ```
+
+2. Run the installer (idempotent — safe to re-run):
+   ```bash
+   # macOS / Linux
+   bash "$HOME/customer-skills/scripts/install.sh"
+   ```
+   ```powershell
+   # Windows
+   pwsh "$HOME\customer-skills\scripts\install.ps1"
+   ```
+
+3. Verify the required skills are now installed. If still missing, stop and report the error.
+
+### Required Tools
+
+| Tool | Check (POSIX) | Check (Windows) | Install (macOS) | Install (Windows) |
+|------|---------------|-----------------|-----------------|-------------------|
+| git | `git --version` | `Get-Command git` | Pre-installed | `winget install Git.Git` |
+| Node.js | `node --version` | `Get-Command node` | `brew install node` | `winget install OpenJS.NodeJS` |
+
+Node.js is only strictly required if CRM sync is desired. Install any missing tools before proceeding.
+
+### CRM Tool Script (`run-tool.mjs`) — Optional
+
+If CRM sync is desired, the helper script must exist at `$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs`.
+
+```bash
+# macOS / Linux
+[ -f "$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs" ] && echo "✅ CRM tools found" || echo "⚠️ CRM tools not found (CRM sync will be unavailable)"
+```
+
+```powershell
+# Windows
+if (Test-Path "$HOME\Documents\se-kanban-tracker\crm\run-tool.mjs") { "✅ CRM tools found" } else { "⚠️ CRM tools not found" }
+```
+
+If missing and CRM sync is desired, clone the SE Kanban Tracker repo:
+
+```bash
+# macOS / Linux
+git clone https://github.com/roie9876/se-kanban-tracker.git "$HOME/Documents/se-kanban-tracker"
+cd "$HOME/Documents/se-kanban-tracker/crm" && npm install
+```
+
+```powershell
+# Windows
+git clone https://github.com/roie9876/se-kanban-tracker.git "$HOME\Documents\se-kanban-tracker"
+Set-Location "$HOME\Documents\se-kanban-tracker\crm"; npm install
+```
+
+### M365 Sign-In
+
+Check `m_m365_status`. If not signed in → call `m_m365_sign_in`.
+
+### Additional Checks
 
 | Prerequisite | Required? | How to check |
 |---|---|---|
-| `customer-engagements/` folder | ✅ | `~/customer-engagements/` exists with ≥1 customer |
-| M365 signed in | ⚠️ Recommended | `m_m365_status` — needed for calendar + email + Teams chat sources |
-| Config file | ✅ | `~/.copilot/crm-activity-sync/config.json` — shared with crm-activity-sync |
-| Node.js | ⚠️ Only for CRM | `node --version` (POSIX) or `Get-Command node` (PowerShell) |
+| `customer-engagements/` folder | ✅ | `$HOME/customer-engagements/` exists with ≥1 customer |
+| Config file | ✅ | `$HOME/.copilot/crm-activity-sync/config.json` — shared with crm-activity-sync |
 
 **Note:** This skill shares its config with `/crm-activity-sync`. If setup hasn't
 been run yet, it will trigger the setup flow (see crm-activity-sync Step 1).

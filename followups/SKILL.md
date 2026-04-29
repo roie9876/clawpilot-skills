@@ -51,6 +51,63 @@ Default to POSIX commands; use PowerShell on Windows native (not WSL/Git Bash).
 - **Read-only operation.** This skill never writes to any file. It reads followups.md, stakeholders.md, and queries M365 — but modifies nothing on disk. No git operations.
 - **Cross-platform paths.** All paths use `~` prefix (e.g., `~/customer-engagements/`) for portability across environments.
 
+## Prerequisite Auto-Install
+
+Before running, verify all dependencies are present. **Install anything missing automatically.**
+
+### Required Sibling Skills
+
+This skill requires the following sibling skill from the same repository
+(`https://github.com/roie9876/clawpilot-skills`):
+
+| Skill | Purpose | Required? |
+|-------|---------|-----------|
+| `/customer-repo` | Customer engagement folder structure (`~/customer-engagements/`) | ✅ For reading follow-ups |
+
+Check if it is installed:
+
+```bash
+# macOS / Linux
+[ -f "$HOME/.copilot/skills/customer-repo/SKILL.md" ] && echo "✅ customer-repo" || echo "❌ customer-repo MISSING"
+```
+
+```powershell
+# Windows
+if (Test-Path "$HOME\.copilot\skills\customer-repo\SKILL.md") { "✅ customer-repo" } else { "❌ customer-repo MISSING" }
+```
+
+**If missing**, install all skills from the repository:
+
+1. Clone the repo (skip if already cloned):
+   ```bash
+   # macOS / Linux
+   [ -d "$HOME/customer-skills/.git" ] || git clone https://github.com/roie9876/clawpilot-skills.git "$HOME/customer-skills"
+   ```
+   ```powershell
+   # Windows
+   if (-not (Test-Path "$HOME\customer-skills\.git")) {
+       git clone https://github.com/roie9876/clawpilot-skills.git "$HOME\customer-skills"
+   }
+   ```
+
+2. Run the installer (idempotent — safe to re-run):
+   ```bash
+   # macOS / Linux
+   bash "$HOME/customer-skills/scripts/install.sh"
+   ```
+   ```powershell
+   # Windows
+   pwsh "$HOME\customer-skills\scripts\install.ps1"
+   ```
+
+3. Verify installed. If still missing, stop and report the error.
+
+### M365 Sign-In
+
+Check `m_m365_status`. If not signed in → call `m_m365_sign_in`.
+
+---
+
 ## Step 1: Determine Scope
 
 Decide whether to scan all customers, a single customer (all projects), or a specific customer/project.

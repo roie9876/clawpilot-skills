@@ -30,6 +30,26 @@ On Windows, the pre-push hook still works because Git for Windows ships with `sh
 - **OneDrive backup.** Remind the user to back up the folder via their OneDrive for Business sync folder (typically `~/OneDrive - <YourCompany>/` on macOS/Linux or `%USERPROFILE%\OneDrive - <YourCompany>\` on Windows — exact path varies per tenant). This keeps customer data on a managed, NDA-safe location.
 - **Names from input.** Accept the customer name (and optional project name) from the user's prompt or ask if not provided. Never guess or fabricate names.
 
+## Prerequisite Auto-Install
+
+Before running, verify all dependencies are present. **Install anything missing automatically.**
+
+### No Required Sibling Skills
+
+This is a foundation skill — it has no sibling skill dependencies. Other skills
+depend on `/customer-repo`, not the other way around.
+
+### Required Tools
+
+| Tool | Check (POSIX) | Check (Windows) | Install (macOS) | Install (Windows) |
+|------|---------------|-----------------|-----------------|-------------------|
+| git | `git --version` | `Get-Command git` | Pre-installed | `winget install Git.Git` |
+
+Install git before proceeding if missing. Git is required to initialize customer
+engagement repos with version control.
+
+---
+
 ## Step 1: Collect Names
 
 Parse the user's input for a **customer name** and an optional **project name**.

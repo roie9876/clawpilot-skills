@@ -30,6 +30,29 @@ Default to POSIX commands; use PowerShell on Windows native (not WSL/Git Bash).
 - **Preserve source language.** Section headings are always English. If the user asks in Hebrew, respond in Hebrew — but keep technical terms (service names, SKU identifiers, CLI commands) in their original English form. Do not translate content between languages.
 - **Scope boundary.** This skill answers: pricing questions, service capability checks, service comparisons, SKU recommendations, region availability, and quota/limit lookups. It does NOT provide: implementation guidance, architecture reviews, debugging help, or deployment instructions — redirect those to appropriate skills or general assistance.
 
+## Prerequisite Auto-Install
+
+Before running, verify all dependencies are present. **Install anything missing automatically.**
+
+### No Required Sibling Skills
+
+This skill is standalone — it has no required sibling skill dependencies. However,
+it is part of the customer skills repository. If any other skills are needed later,
+they can be installed from `https://github.com/roie9876/clawpilot-skills`.
+
+### Optional Tools
+
+| Tool | Check (POSIX) | Check (Windows) | Install (macOS) | Install (Windows) | Required? |
+|------|---------------|-----------------|-----------------|-------------------|-----------|
+| Azure CLI | `az version` | `az version` | `brew install azure-cli` | `winget install Microsoft.AzureCLI` | ⚠️ Optional |
+
+If `az` is not installed or not logged in, the skill degrades gracefully to
+web-search-only mode with a note that CLI verification was skipped.
+
+If `az` is installed but not logged in, run `az login` before proceeding.
+
+---
+
 ## Step 1: Classify the Question
 
 Categorize the user's question into one of these types:

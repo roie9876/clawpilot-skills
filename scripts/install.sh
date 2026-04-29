@@ -23,7 +23,7 @@ esac
 
 SKILLS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TARGET_DIR="$HOME/.copilot/skills"
-SKILLS=(meeting-prep customer-repo capture-meeting followups azure-answer architecture connect crm-activity-sync daily-activity-log)
+SKILLS=(meeting-prep customer-repo capture-meeting followups azure-answer architecture connect crm-activity-sync daily-activity-log msx-crm)
 
 echo "Customer Skills Installer"
 echo "========================="

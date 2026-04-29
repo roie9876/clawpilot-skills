@@ -62,14 +62,14 @@ Default to POSIX commands; fall back to PowerShell when running on Windows nativ
 - **Preserve source language.** Activity subjects and descriptions stay in their original language (English or Hebrew). Do not translate.
 - **Portable by design.** No hardcoded user names, paths, or customer mappings. Everything is discovered at runtime via M365 profile + CRM queries + local folder scanning. Any team member with the prerequisites can run this skill.
 
-## Prerequisites
+## Prerequisite Auto-Install
 
-Before this skill can run, the following must be in place:
+Before running, verify all dependencies are present. **Install anything missing automatically.**
 
-### Required Skills
+### Required Sibling Skills
 
-These skills must also be installed in Clawpilot (`~/.copilot/m-skills/`) for the
-full pipeline to work:
+This skill requires sibling skills from the same repository
+(`https://github.com/roie9876/clawpilot-skills`):
 
 | Skill | Purpose | Required? |
 |---|---|---|
@@ -77,18 +77,104 @@ full pipeline to work:
 | `/customer-repo` | Scaffolds `customer-engagements/` folder structure | ✅ For initial setup |
 | `/msx-crm` | CRM query tools (`run-tool.mjs`) for reading/writing MSX data | ✅ CRM backend |
 
-### Required Tools & Infrastructure
+Check if each required skill is installed:
+
+```bash
+# macOS / Linux
+for skill in daily-activity-log customer-repo msx-crm; do
+  [ -f "$HOME/.copilot/skills/$skill/SKILL.md" ] && echo "✅ $skill" || echo "❌ $skill MISSING"
+done
+```
+
+```powershell
+# Windows
+foreach ($skill in @('daily-activity-log','customer-repo','msx-crm')) {
+    if (Test-Path "$HOME\.copilot\skills\$skill\SKILL.md") { "✅ $skill" } else { "❌ $skill MISSING" }
+}
+```
+
+**If ANY required skill is missing**, install all skills from the repository:
+
+1. Clone the repo (skip if already cloned):
+   ```bash
+   # macOS / Linux
+   [ -d "$HOME/customer-skills/.git" ] || git clone https://github.com/roie9876/clawpilot-skills.git "$HOME/customer-skills"
+   ```
+   ```powershell
+   # Windows
+   if (-not (Test-Path "$HOME\customer-skills\.git")) {
+       git clone https://github.com/roie9876/clawpilot-skills.git "$HOME\customer-skills"
+   }
+   ```
+
+2. Run the installer (idempotent — safe to re-run):
+   ```bash
+   # macOS / Linux
+   bash "$HOME/customer-skills/scripts/install.sh"
+   ```
+   ```powershell
+   # Windows
+   pwsh "$HOME\customer-skills\scripts\install.ps1"
+   ```
+
+3. Verify the required skills are now installed. If still missing, stop and report the error.
+
+### Required Tools
+
+| Tool | Check (POSIX) | Check (Windows) | Install (macOS) | Install (Windows) |
+|------|---------------|-----------------|-----------------|-------------------|
+| Node.js | `node --version` | `Get-Command node` | `brew install node` | `winget install OpenJS.NodeJS` |
+| git | `git --version` | `Get-Command git` | Pre-installed | `winget install Git.Git` |
+
+Install any missing tools before proceeding. After installing Node.js, verify: `node --version`.
+
+### CRM Tool Script (`run-tool.mjs`)
+
+The CRM helper script must exist at `$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs`.
+
+```bash
+# macOS / Linux
+[ -f "$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs" ] && echo "✅ CRM tools found" || echo "❌ CRM tools missing"
+```
+
+```powershell
+# Windows
+if (Test-Path "$HOME\Documents\se-kanban-tracker\crm\run-tool.mjs") { "✅ CRM tools found" } else { "❌ CRM tools missing" }
+```
+
+If missing, clone the SE Kanban Tracker repo:
+
+```bash
+# macOS / Linux
+git clone https://github.com/roie9876/se-kanban-tracker.git "$HOME/Documents/se-kanban-tracker"
+cd "$HOME/Documents/se-kanban-tracker/crm" && npm install
+```
+
+```powershell
+# Windows
+git clone https://github.com/roie9876/se-kanban-tracker.git "$HOME\Documents\se-kanban-tracker"
+Set-Location "$HOME\Documents\se-kanban-tracker\crm"; npm install
+```
+
+### VPN Connection
+
+CRM is only accessible on Microsoft corpnet.
+
+**macOS / Linux:** Run `$HOME/Scripts/ensure-vpn.sh` if it exists. If not, ask user to connect Azure VPN manually.
+
+**Windows:** No automated VPN script. Ask user to confirm Azure VPN Client is connected.
+
+### M365 Sign-In
+
+Check `m_m365_status`. If not signed in → call `m_m365_sign_in`.
+
+### Additional Checks
 
 | Prerequisite | How to check | If missing |
 |---|---|---|
-| Clawpilot installed | `~/.copilot/` exists | Install Clawpilot |
-| VPN connected | `~/Scripts/ensure-vpn.sh` exits 0 | Auto-connect (see Step 0) |
-| CRM access | `node ~/Documents/se-kanban-tracker/crm/run-tool.mjs crm_auth_status` → authenticated | VPN + SSO must be working |
-| `customer-engagements/` folder | `~/customer-engagements/` exists with ≥1 customer | Run `/customer-repo` to scaffold |
-| Config file | `~/.copilot/crm-activity-sync/config.json` exists | Run `/crm-activity-sync setup` (Step 1) |
+| `customer-engagements/` folder | `$HOME/customer-engagements/` exists with ≥1 customer | Run `/customer-repo` to scaffold |
+| Config file | `$HOME/.copilot/crm-activity-sync/config.json` exists | Run `/crm-activity-sync setup` (Step 1) |
 | Activity logs populated | `activity-log.md` exists in ≥1 project | Run `/daily-activity-log` first |
-| Node.js | `node --version` (POSIX) or `Get-Command node` (PowerShell) | macOS: `brew install node` · Windows: `winget install OpenJS.NodeJS` · Linux: distro pkg mgr |
-| M365 signed in | `m_m365_status` → signedIn:true | `m_m365_sign_in` |
 
 **Upstream dependency:** `/daily-activity-log` must run before `/crm-activity-sync`
 to populate `activity-log.md`. If activity-log.md is missing or has no entry for the

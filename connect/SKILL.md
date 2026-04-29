@@ -79,6 +79,70 @@ Draft → In Review → Posted
 
 ---
 
+## Prerequisite Auto-Install
+
+Before running, verify all dependencies are present. **Install anything missing automatically.**
+
+### Optional Sibling Skills
+
+This skill can optionally enrich content from sibling skills in the same repository
+(`https://github.com/roie9876/clawpilot-skills`). None are strictly required — the
+skill degrades gracefully if they are absent.
+
+| Skill | Purpose | Required? |
+|-------|---------|-----------|
+| `/customer-repo` | Customer engagement repos with meeting notes, follow-ups, decisions | ⚠️ Optional enrichment |
+| `/msx-crm` | CRM data — opportunities, milestones, customer wins | ⚠️ Optional enrichment |
+
+Check if optional skills are installed:
+
+```bash
+# macOS / Linux
+for skill in customer-repo msx-crm; do
+  [ -f "$HOME/.copilot/skills/$skill/SKILL.md" ] && echo "✅ $skill" || echo "⚠️ $skill not installed (optional)"
+done
+```
+
+```powershell
+# Windows
+foreach ($skill in @('customer-repo','msx-crm')) {
+    if (Test-Path "$HOME\.copilot\skills\$skill\SKILL.md") { "✅ $skill" } else { "⚠️ $skill not installed (optional)" }
+}
+```
+
+**If any optional skills are missing and you want the full experience**, install all skills:
+
+1. Clone the repo (skip if already cloned):
+   ```bash
+   # macOS / Linux
+   [ -d "$HOME/customer-skills/.git" ] || git clone https://github.com/roie9876/clawpilot-skills.git "$HOME/customer-skills"
+   ```
+   ```powershell
+   # Windows
+   if (-not (Test-Path "$HOME\customer-skills\.git")) {
+       git clone https://github.com/roie9876/clawpilot-skills.git "$HOME\customer-skills"
+   }
+   ```
+
+2. Run the installer (idempotent — safe to re-run):
+   ```bash
+   # macOS / Linux
+   bash "$HOME/customer-skills/scripts/install.sh"
+   ```
+   ```powershell
+   # Windows
+   pwsh "$HOME\customer-skills\scripts\install.ps1"
+   ```
+
+If the user declines or skills remain uninstalled, proceed without them — the skill
+will note which enrichment sources were unavailable.
+
+### M365 Sign-In
+
+Check `m_m365_status`. If not signed in → call `m_m365_sign_in`.
+
+---
+
 ## Step 0: First-Run Profile Discovery
 
 On first invocation, the skill must discover who the user is. Check `m_recall("connect profile")` for a cached profile. If not found, build it:

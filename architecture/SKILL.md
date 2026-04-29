@@ -29,6 +29,70 @@ Note: the icon-catalog grep examples in this skill use bash. On Windows PowerShe
 - **Verified icons only.** Never use an icon path or shape name in a diagram unless it has been confirmed by grepping the static catalogs. Unverified icons will not render.
 - **Clean before dense.** Start with a clean, readable layout (3-4 lanes, left-to-right flow). Add detail only when the user explicitly asks.
 
+## Prerequisite Auto-Install
+
+Before running, verify all dependencies are present. **Install anything missing automatically.**
+
+### Required Sibling Skills
+
+This skill requires the following sibling skill from the same repository
+(`https://github.com/roie9876/clawpilot-skills`):
+
+| Skill | Purpose | Required? |
+|-------|---------|-----------|
+| `/customer-repo` | Customer engagement folder structure (`~/customer-engagements/`) | ✅ For storing diagrams |
+
+Check if it is installed:
+
+```bash
+# macOS / Linux
+[ -f "$HOME/.copilot/skills/customer-repo/SKILL.md" ] && echo "✅ customer-repo" || echo "❌ customer-repo MISSING"
+```
+
+```powershell
+# Windows
+if (Test-Path "$HOME\.copilot\skills\customer-repo\SKILL.md") { "✅ customer-repo" } else { "❌ customer-repo MISSING" }
+```
+
+**If missing**, install all skills from the repository:
+
+1. Clone the repo (skip if already cloned):
+   ```bash
+   # macOS / Linux
+   [ -d "$HOME/customer-skills/.git" ] || git clone https://github.com/roie9876/clawpilot-skills.git "$HOME/customer-skills"
+   ```
+   ```powershell
+   # Windows
+   if (-not (Test-Path "$HOME\customer-skills\.git")) {
+       git clone https://github.com/roie9876/clawpilot-skills.git "$HOME\customer-skills"
+   }
+   ```
+
+2. Run the installer (idempotent — safe to re-run):
+   ```bash
+   # macOS / Linux
+   bash "$HOME/customer-skills/scripts/install.sh"
+   ```
+   ```powershell
+   # Windows
+   pwsh "$HOME\customer-skills\scripts\install.ps1"
+   ```
+
+3. Verify installed. If still missing, stop and report the error.
+
+### Required Tools
+
+| Tool | Check (POSIX) | Check (Windows) | Install (macOS) | Install (Windows) |
+|------|---------------|-----------------|-----------------|-------------------|
+| git | `git --version` | `Get-Command git` | Pre-installed | `winget install Git.Git` |
+
+### Draw.io MCP Server
+
+This skill requires the Draw.io MCP server. Check if the `drawio/create_diagram` tool is available.
+If not: add the MCP server in Clawpilot settings → MCP Servers → URL: `https://mcp.draw.io/mcp`.
+
+---
+
 ## Step 1: Understand the Architecture
 
 Ask the user to describe the architecture they want to diagram, or accept it directly from the prompt (e.g., "/architecture hub-spoke network for Contoso").
