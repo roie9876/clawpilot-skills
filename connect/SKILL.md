@@ -190,7 +190,7 @@ Probe for optional enrichment sources. Each probe is silent — if it fails, the
 | Source | Probe | What it provides |
 |--------|-------|-----------------|
 | Customer engagement repos | `ls ~/customer-engagements/ 2>/dev/null` | Meeting notes, follow-ups, decisions, project context |
-| CRM / MSX tool | `ls ~/Documents/crm-tools/run-tool.mjs 2>/dev/null` | Opportunities, milestones, customer wins |
+| CRM / MSX tool | `ls ~/.copilot/skills/msx-crm/crm-tools/run-tool.mjs 2>/dev/null` | Opportunities, milestones, customer wins |
 | Kanban board | `curl -s --max-time 2 http://localhost:3456/api/health 2>/dev/null` | Completed tasks, work evidence |
 | Browser-harness | `which browser-harness 2>/dev/null || ls ~/.local/bin/browser-harness 2>/dev/null` | Direct browser automation (preferred) |
 
@@ -324,11 +324,11 @@ For each customer with a repo:
 
 ### 3f. CRM / MSX Data (OPTIONAL — skip if tool not found)
 
-Only if the CRM tool exists at `~/Documents/crm-tools/run-tool.mjs`:
+Only if the CRM tool exists at `~/.copilot/skills/msx-crm/crm-tools/run-tool.mjs`:
 
 ```bash
-node ~/Documents/crm-tools/run-tool.mjs list-milestones --status active
-node ~/Documents/crm-tools/run-tool.mjs list-opportunities
+node ~/.copilot/skills/msx-crm/crm-tools/run-tool.mjs list-milestones --status active
+node ~/.copilot/skills/msx-crm/crm-tools/run-tool.mjs list-opportunities
 ```
 
 Extract: deals progressed, milestones achieved, customer wins, pipeline contribution.

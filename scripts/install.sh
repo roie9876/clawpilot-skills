@@ -79,9 +79,29 @@ echo ""
 echo "Done: $installed installed, $updated updated, $skipped skipped"
 echo ""
 
-# Reminder about MCP server
+# --- CRM Tools: clone MCAPS-IQ dependency ---
+CRM_TOOLS_DIR="$TARGET_DIR/msx-crm/crm-tools"
+MCAPS_IQ_DIR="$CRM_TOOLS_DIR/lib/mcaps-iq"
+
+if [ -d "$CRM_TOOLS_DIR" ]; then
+    if [ -d "$MCAPS_IQ_DIR" ]; then
+        echo "  ✓  MCAPS-IQ library already present"
+    else
+        echo "  ⏳ Cloning MCAPS-IQ library for CRM tools..."
+        mkdir -p "$CRM_TOOLS_DIR/lib"
+        if git clone --quiet https://github.com/yingding/MCAPS-IQ.git "$MCAPS_IQ_DIR" 2>/dev/null; then
+            echo "  ✓  MCAPS-IQ library cloned"
+        else
+            echo "  ⚠  Failed to clone MCAPS-IQ. CRM tools will not work until you run:"
+            echo "     git clone https://github.com/yingding/MCAPS-IQ.git $MCAPS_IQ_DIR"
+        fi
+    fi
+fi
+
+echo ""
 echo "Next steps:"
 echo "  1. Add the Draw.io MCP server in Clawpilot settings:"
 echo "     URL: https://mcp.draw.io/mcp"
 echo "  2. (Optional) Install Azure CLI and run 'az login' for /azure-answer"
 echo "  3. Run '/customer-repo <name>' to set up your first customer folder"
+echo "  4. Connect to VPN and run: node ~/.copilot/skills/msx-crm/crm-tools/run-tool.mjs crm_whoami"
