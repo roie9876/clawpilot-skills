@@ -96,20 +96,20 @@ After installing any tool, verify it works before proceeding.
 
 ## CRM Tool Script (`run-tool.mjs`)
 
-CRM-dependent skills require `$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs`.
+CRM-dependent skills require `$HOME/Documents/crm-tools/run-tool.mjs`.
 
 If missing, clone the repository:
 
 ```bash
 # macOS / Linux
-git clone https://github.com/roie9876/se-kanban-tracker.git "$HOME/Documents/se-kanban-tracker"
-cd "$HOME/Documents/se-kanban-tracker/crm" && npm install
+git clone https://github.com/roie9876/crm-tools.git "$HOME/Documents/crm-tools"
+cd "$HOME/Documents/crm-tools"
 ```
 
 ```powershell
 # Windows
-git clone https://github.com/roie9876/se-kanban-tracker.git "$HOME\Documents\se-kanban-tracker"
-Set-Location "$HOME\Documents\se-kanban-tracker\crm"; npm install
+git clone https://github.com/roie9876/crm-tools.git "$HOME\Documents\crm-tools"
+Set-Location "$HOME\Documents\crm-tools"; npm install
 ```
 
 ## VPN Connection

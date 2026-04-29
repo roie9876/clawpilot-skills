@@ -22,7 +22,7 @@ command syntax. See `_shared/PLATFORM.md` (skills repo root) for the full refere
 
 | Action | macOS / Linux (bash) | Windows (PowerShell) |
 |--------|----------------------|----------------------|
-| Run node script | `node $HOME/Documents/se-kanban-tracker/crm/run-tool.mjs ...` | `node $HOME/Documents/se-kanban-tracker/crm/run-tool.mjs ...` |
+| Run node script | `node $HOME/Documents/crm-tools/run-tool.mjs ...` | `node $HOME/Documents/crm-tools/run-tool.mjs ...` |
 | Find node | `which node` | `Get-Command node` |
 | Home dir | `~` or `$HOME` | `$HOME` |
 
@@ -89,28 +89,28 @@ Install any missing tools before proceeding. After installing Node.js, verify: `
 
 ### CRM Tool Script (`run-tool.mjs`)
 
-The CRM helper script must exist at `$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs`.
+The CRM helper script must exist at `$HOME/Documents/crm-tools/run-tool.mjs`.
 
 ```bash
 # macOS / Linux
-[ -f "$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs" ] && echo "✅ CRM tools found" || echo "❌ CRM tools missing"
+[ -f "$HOME/Documents/crm-tools/run-tool.mjs" ] && echo "✅ CRM tools found" || echo "❌ CRM tools missing"
 ```
 
 ```powershell
 # Windows
-if (Test-Path "$HOME\Documents\se-kanban-tracker\crm\run-tool.mjs") { "✅ CRM tools found" } else { "❌ CRM tools missing" }
+if (Test-Path "$HOME\Documents\crm-tools\run-tool.mjs") { "✅ CRM tools found" } else { "❌ CRM tools missing" }
 ```
 
 If missing, clone the SE Kanban Tracker repo:
 
 ```bash
-git clone https://github.com/roie9876/se-kanban-tracker.git "$HOME/Documents/se-kanban-tracker"
-cd "$HOME/Documents/se-kanban-tracker/crm" && npm install
+git clone https://github.com/roie9876/crm-tools.git "$HOME/Documents/crm-tools"
+cd "$HOME/Documents/crm-tools"
 ```
 
 ```powershell
-git clone https://github.com/roie9876/se-kanban-tracker.git "$HOME\Documents\se-kanban-tracker"
-Set-Location "$HOME\Documents\se-kanban-tracker\crm"; npm install
+git clone https://github.com/roie9876/crm-tools.git "$HOME\Documents\crm-tools"
+Set-Location "$HOME\Documents\crm-tools"; npm install
 ```
 
 ### VPN Connection
@@ -147,12 +147,12 @@ After all prerequisites are satisfied:
 
 ```bash
 # macOS / Linux
-node "$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs" <tool-name> '<json-params>'
+node "$HOME/Documents/crm-tools/run-tool.mjs" <tool-name> '<json-params>'
 ```
 
 ```powershell
 # Windows
-node "$HOME\Documents\se-kanban-tracker\crm\run-tool.mjs" <tool-name> '<json-params>'
+node "$HOME\Documents\crm-tools\run-tool.mjs" <tool-name> '<json-params>'
 ```
 
 **Important:** Always run the VPN check before any CRM tool call.
@@ -162,13 +162,13 @@ node "$HOME\Documents\se-kanban-tracker\crm\run-tool.mjs" <tool-name> '<json-par
 ### 1. `crm_auth_status`
 Check if CRM authentication is working.
 ```bash
-node "$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs" crm_auth_status
+node "$HOME/Documents/crm-tools/run-tool.mjs" crm_auth_status
 ```
 
 ### 2. `crm_whoami`
 Get the current user's CRM identity.
 ```bash
-node "$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs" crm_whoami
+node "$HOME/Documents/crm-tools/run-tool.mjs" crm_whoami
 ```
 
 ### 3. `get_milestones`
@@ -189,10 +189,10 @@ Parameters:
 Examples:
 ```bash
 # Customer milestones
-node "$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs" get_milestones '{"customerKeyword":"Aidoc"}'
+node "$HOME/Documents/crm-tools/run-tool.mjs" get_milestones '{"customerKeyword":"Aidoc"}'
 
 # My active milestones
-node "$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs" get_milestones '{"mine":true,"statusFilter":"active"}'
+node "$HOME/Documents/crm-tools/run-tool.mjs" get_milestones '{"mine":true,"statusFilter":"active"}'
 ```
 
 ### 4. `list_opportunities`
@@ -203,7 +203,7 @@ Parameters:
 - `includeCompleted` (boolean) — Include completed/old opportunities
 
 ```bash
-node "$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs" list_opportunities '{"customerKeyword":"Aidoc"}'
+node "$HOME/Documents/crm-tools/run-tool.mjs" list_opportunities '{"customerKeyword":"Aidoc"}'
 ```
 
 ### 5. `get_my_active_opportunities`
@@ -212,7 +212,7 @@ Parameters:
 - `customerKeyword` (string) — Optional filter by customer name
 
 ```bash
-node "$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs" get_my_active_opportunities
+node "$HOME/Documents/crm-tools/run-tool.mjs" get_my_active_opportunities
 ```
 
 ### 6. `get_milestone_activities`
@@ -222,7 +222,7 @@ Parameters:
 - `milestoneIds` (GUID[]) — Multiple milestones
 
 ```bash
-node "$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs" get_milestone_activities '{"milestoneId":"abc-123..."}'
+node "$HOME/Documents/crm-tools/run-tool.mjs" get_milestone_activities '{"milestoneId":"abc-123..."}'
 ```
 
 ### 7. `find_milestones_needing_tasks`
@@ -233,7 +233,7 @@ Parameters:
 - `mine` (boolean)
 
 ```bash
-node "$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs" find_milestones_needing_tasks '{"mine":true}'
+node "$HOME/Documents/crm-tools/run-tool.mjs" find_milestones_needing_tasks '{"mine":true}'
 ```
 
 ### 8. `crm_query`
@@ -247,7 +247,7 @@ Parameters:
 - `expand` (string) — OData $expand expression
 
 ```bash
-node "$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs" crm_query '{"entitySet":"accounts","filter":"contains(name,'\''Aidoc'\'')","select":"accountid,name,msp_tpid","top":10}'
+node "$HOME/Documents/crm-tools/run-tool.mjs" crm_query '{"entitySet":"accounts","filter":"contains(name,'\''Aidoc'\'')","select":"accountid,name,msp_tpid","top":10}'
 ```
 
 ### 9. `crm_get_record`

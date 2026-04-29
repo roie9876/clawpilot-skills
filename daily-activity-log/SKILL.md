@@ -136,30 +136,30 @@ Node.js is only strictly required if CRM sync is desired. Install any missing to
 
 ### CRM Tool Script (`run-tool.mjs`) — Optional
 
-If CRM sync is desired, the helper script must exist at `$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs`.
+If CRM sync is desired, the helper script must exist at `$HOME/Documents/crm-tools/run-tool.mjs`.
 
 ```bash
 # macOS / Linux
-[ -f "$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs" ] && echo "✅ CRM tools found" || echo "⚠️ CRM tools not found (CRM sync will be unavailable)"
+[ -f "$HOME/Documents/crm-tools/run-tool.mjs" ] && echo "✅ CRM tools found" || echo "⚠️ CRM tools not found (CRM sync will be unavailable)"
 ```
 
 ```powershell
 # Windows
-if (Test-Path "$HOME\Documents\se-kanban-tracker\crm\run-tool.mjs") { "✅ CRM tools found" } else { "⚠️ CRM tools not found" }
+if (Test-Path "$HOME\Documents\crm-tools\run-tool.mjs") { "✅ CRM tools found" } else { "⚠️ CRM tools not found" }
 ```
 
 If missing and CRM sync is desired, clone the SE Kanban Tracker repo:
 
 ```bash
 # macOS / Linux
-git clone https://github.com/roie9876/se-kanban-tracker.git "$HOME/Documents/se-kanban-tracker"
-cd "$HOME/Documents/se-kanban-tracker/crm" && npm install
+git clone https://github.com/roie9876/crm-tools.git "$HOME/Documents/crm-tools"
+cd "$HOME/Documents/crm-tools"
 ```
 
 ```powershell
 # Windows
-git clone https://github.com/roie9876/se-kanban-tracker.git "$HOME\Documents\se-kanban-tracker"
-Set-Location "$HOME\Documents\se-kanban-tracker\crm"; npm install
+git clone https://github.com/roie9876/crm-tools.git "$HOME\Documents\crm-tools"
+Set-Location "$HOME\Documents\crm-tools"; npm install
 ```
 
 ### M365 Sign-In

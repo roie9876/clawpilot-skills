@@ -368,7 +368,7 @@ brew install node
 
 When calling CRM tools from scripts/automations, use the full path:
 ```bash
-PATH="/opt/homebrew/bin:$PATH" node ~/Documents/se-kanban-tracker/crm/run-tool.mjs ...
+PATH="/opt/homebrew/bin:$PATH" node ~/Documents/crm-tools/run-tool.mjs ...
 ```
 
 ### `cliclick` Not Installed

@@ -130,30 +130,30 @@ Install any missing tools before proceeding. After installing Node.js, verify: `
 
 ### CRM Tool Script (`run-tool.mjs`)
 
-The CRM helper script must exist at `$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs`.
+The CRM helper script must exist at `$HOME/Documents/crm-tools/run-tool.mjs`.
 
 ```bash
 # macOS / Linux
-[ -f "$HOME/Documents/se-kanban-tracker/crm/run-tool.mjs" ] && echo "✅ CRM tools found" || echo "❌ CRM tools missing"
+[ -f "$HOME/Documents/crm-tools/run-tool.mjs" ] && echo "✅ CRM tools found" || echo "❌ CRM tools missing"
 ```
 
 ```powershell
 # Windows
-if (Test-Path "$HOME\Documents\se-kanban-tracker\crm\run-tool.mjs") { "✅ CRM tools found" } else { "❌ CRM tools missing" }
+if (Test-Path "$HOME\Documents\crm-tools\run-tool.mjs") { "✅ CRM tools found" } else { "❌ CRM tools missing" }
 ```
 
 If missing, clone the SE Kanban Tracker repo:
 
 ```bash
 # macOS / Linux
-git clone https://github.com/roie9876/se-kanban-tracker.git "$HOME/Documents/se-kanban-tracker"
-cd "$HOME/Documents/se-kanban-tracker/crm" && npm install
+git clone https://github.com/roie9876/crm-tools.git "$HOME/Documents/crm-tools"
+cd "$HOME/Documents/crm-tools"
 ```
 
 ```powershell
 # Windows
-git clone https://github.com/roie9876/se-kanban-tracker.git "$HOME\Documents\se-kanban-tracker"
-Set-Location "$HOME\Documents\se-kanban-tracker\crm"; npm install
+git clone https://github.com/roie9876/crm-tools.git "$HOME\Documents\crm-tools"
+Set-Location "$HOME\Documents\crm-tools"; npm install
 ```
 
 ### VPN Connection
@@ -209,7 +209,7 @@ All CRM operations use the existing tool runner:
 
 ```bash
 ~/Scripts/ensure-vpn.sh --quiet
-node ~/Documents/se-kanban-tracker/crm/run-tool.mjs <tool-name> '<json-params>'
+node ~/Documents/crm-tools/run-tool.mjs <tool-name> '<json-params>'
 ```
 
 **Important:** The CRM tool currently supports **read-only** operations. Before this
@@ -228,7 +228,7 @@ Run before every sync operation.
    - If automated → queue all activities to `pending.json`, send Teams notification: "CRM activity sync skipped — VPN down."
    - Stop.
 
-2. **CRM auth:** Run `node ~/Documents/se-kanban-tracker/crm/run-tool.mjs crm_auth_status`.
+2. **CRM auth:** Run `node ~/Documents/crm-tools/run-tool.mjs crm_auth_status`.
    - If `authenticated: false` → same behavior as VPN failure.
 
 3. **Config:** Check `~/.copilot/crm-activity-sync/config.json` exists.
@@ -327,7 +327,7 @@ When `/daily-activity-log` detects a calendar meeting with an external domain no
 For each discovered customer:
 
 ```bash
-node ~/Documents/se-kanban-tracker/crm/run-tool.mjs list_opportunities '{"customerKeyword":"<customer-name>"}'
+node ~/Documents/crm-tools/run-tool.mjs list_opportunities '{"customerKeyword":"<customer-name>"}'
 ```
 
 Present the matches to the user:
@@ -341,7 +341,7 @@ Which opportunities are you actively working on?
 For each confirmed opportunity, fetch milestones:
 
 ```bash
-node ~/Documents/se-kanban-tracker/crm/run-tool.mjs get_milestones '{"opportunityId":"<opp-id>","statusFilter":"active"}'
+node ~/Documents/crm-tools/run-tool.mjs get_milestones '{"opportunityId":"<opp-id>","statusFilter":"active"}'
 ```
 
 ### 1d. Build Per-Customer Mapping
@@ -404,7 +404,7 @@ Write `~/customer-engagements/{customer}/crm-mapping.json`:
 For each confirmed opportunity:
 
 ```bash
-node ~/Documents/se-kanban-tracker/crm/run-tool.mjs crm_query '{
+node ~/Documents/crm-tools/run-tool.mjs crm_query '{
   "entitySet": "msp_dealteams",
   "filter": "_msp_opportunityid_value eq '\''<opportunity-id>'\''",
   "select": "_msp_userid_value,msp_role",
@@ -558,7 +558,7 @@ For each activity in the list:
 
 4. **Validate milestone is still active** — query CRM to confirm:
    ```bash
-   node ~/Documents/se-kanban-tracker/crm/run-tool.mjs get_milestones '{"milestoneId":"<milestone-id>"}'
+   node ~/Documents/crm-tools/run-tool.mjs get_milestones '{"milestoneId":"<milestone-id>"}'
    ```
    Check `msp_milestonestatus` is in the active set (Not Started, On Track, In Progress, Blocked, At Risk).
 
@@ -666,7 +666,7 @@ that's also missing, default to `Customer Engagement` (`861980000`).
 Before creating, query existing activities on the milestone:
 
 ```bash
-node ~/Documents/se-kanban-tracker/crm/run-tool.mjs get_milestone_activities '{"milestoneId":"<milestone-id>"}'
+node ~/Documents/crm-tools/run-tool.mjs get_milestone_activities '{"milestoneId":"<milestone-id>"}'
 ```
 
 Check if any existing task has:
@@ -685,7 +685,7 @@ the parent opportunity. If not, auto-add them.
 **Check membership:**
 
 ```bash
-node ~/Documents/se-kanban-tracker/crm/run-tool.mjs crm_query '{
+node ~/Documents/crm-tools/run-tool.mjs crm_query '{
   "entitySet": "msp_dealteams",
   "filter": "_msp_parentopportunityid_value eq '"'"'<opportunity-id>'"'"' and _msp_dealteamuserid_value eq '"'"'<user-crm-id>'"'"' and statecode eq 0",
   "select": "msp_dealteamid",
@@ -697,7 +697,7 @@ node ~/Documents/se-kanban-tracker/crm/run-tool.mjs crm_query '{
 - If count == 0 → **auto-add to deal team:**
 
 ```bash
-node ~/Documents/se-kanban-tracker/crm/run-tool.mjs crm_query '{
+node ~/Documents/crm-tools/run-tool.mjs crm_query '{
   "method": "POST",
   "entitySet": "msp_dealteams",
   "body": {
@@ -730,7 +730,7 @@ line (e.g., `**Duration:** 285 min (4h 45m) — ...` → `285`). Pass as
 `duration` (the tool maps it to `actualdurationminutes` internally).
 
 ```bash
-node ~/Documents/se-kanban-tracker/crm/run-tool.mjs create_task '{
+node ~/Documents/crm-tools/run-tool.mjs create_task '{
   "subject": "RBH - POC",
   "description": "...",
   "scheduledend": "2026-04-30T08:00:00Z",
@@ -792,7 +792,7 @@ This step runs as part of every sync. It serves three purposes:
 For each SSP in `config.json → core_ssps`:
 
 ```bash
-node ~/Documents/se-kanban-tracker/crm/run-tool.mjs crm_query '{"entitySet":"opportunities","filter":"_ownerid_value eq '"'"'<ssp-crm-user-id>'"'"' and statecode eq 0","select":"opportunityid,name,_parentaccountid_value,createdon","orderby":"createdon desc","top":20}'
+node ~/Documents/crm-tools/run-tool.mjs crm_query '{"entitySet":"opportunities","filter":"_ownerid_value eq '"'"'<ssp-crm-user-id>'"'"' and statecode eq 0","select":"opportunityid,name,_parentaccountid_value,createdon","orderby":"createdon desc","top":20}'
 ```
 
 Compare against known opportunities in all `crm-mapping.json` files. If an opportunity is:
@@ -813,7 +813,7 @@ Then alert:
 For each opportunity in all `crm-mapping.json` files:
 
 ```bash
-node ~/Documents/se-kanban-tracker/crm/run-tool.mjs get_milestones '{"opportunityId":"<opp-id>","statusFilter":"active"}'
+node ~/Documents/crm-tools/run-tool.mjs get_milestones '{"opportunityId":"<opp-id>","statusFilter":"active"}'
 ```
 
 Compare against milestones currently in the mapping:
@@ -828,11 +828,11 @@ For each pending activity with reason `no_milestone`:
 1. **Check mapped opportunity** — query milestones again (SSP may have created one since last check).
 2. **If still no milestone on mapped opp** — broaden search to ALL active opportunities for the customer account:
    ```bash
-   node ~/Documents/se-kanban-tracker/crm/run-tool.mjs list_opportunities '{"customerKeyword":"<customer-name>"}'
+   node ~/Documents/crm-tools/run-tool.mjs list_opportunities '{"customerKeyword":"<customer-name>"}'
    ```
    Then get milestones for each:
    ```bash
-   node ~/Documents/se-kanban-tracker/crm/run-tool.mjs get_milestones '{"opportunityId":"<opp-id>","statusFilter":"active"}'
+   node ~/Documents/crm-tools/run-tool.mjs get_milestones '{"opportunityId":"<opp-id>","statusFilter":"active"}'
    ```
 
 3. **Score each discovered milestone** for the pending activity:
@@ -936,7 +936,7 @@ Items pending for >30 days are flagged:
 
 **This must be implemented before the skill can create activities.**
 
-Add `create_task` to `~/Documents/se-kanban-tracker/crm/run-tool.mjs`:
+Add `create_task` to `~/Documents/crm-tools/run-tool.mjs`:
 
 ```javascript
 async create_task({ subject, description, scheduledend, milestoneId, taskcategory, ownerId }) {
@@ -1063,7 +1063,7 @@ When another team member wants to use this skill:
 
 1. **Install prerequisites:**
    - Clawpilot with M365 signed in.
-   - CRM tools: `~/Documents/se-kanban-tracker/crm/run-tool.mjs` + MCAPS-IQ library.
+   - CRM tools: `~/Documents/crm-tools/run-tool.mjs` + MCAPS-IQ library.
    - VPN script: `~/Scripts/ensure-vpn.sh`.
    - At least one customer-engagements folder (via `/customer-repo`).
 
@@ -1081,7 +1081,7 @@ When another team member wants to use this skill:
 - [ ] No hardcoded customer names (discovered via folder scan + CRM query)
 - [ ] No hardcoded milestone IDs (discovered via CRM query)
 - [ ] No hardcoded CRM user IDs (discovered via `crm_whoami`)
-- [ ] No hardcoded file paths except `~/customer-engagements/` and `~/Documents/se-kanban-tracker/crm/` (could be made configurable)
+- [ ] No hardcoded file paths except `~/customer-engagements/` and `~/Documents/crm-tools/` (could be made configurable)
 - [ ] Israeli work week (Sun–Thu) is configurable via `preferences.schedule_days`
 - [ ] Initials are confirmed with user, not assumed
 
@@ -1190,14 +1190,14 @@ these steps automatically on first invocation.
    - If missing: "CRM access requires Microsoft VPN. Please configure Azure VPN
      Client and re-run setup."
 
-2. **CRM  `~/Documents/se-kanban-tracker/crm/run-tool.mjs` must exist.tool** 
+2. **CRM  `~/Documents/crm-tools/run-tool.mjs` must exist.tool** 
    - If missing: Clone the repo:
      ```bash
-     git clone <se-kanban-tracker-repo-url> ~/Documents/se-kanban-tracker
-     cd ~/Documents/se-kanban-tracker && npm install
+     git clone https://github.com/roie9876/crm-tools.git ~/Documents/crm-tools
+     cd ~/Documents/crm-tools
      ```
-   - Test (POSIX): `node ~/Documents/se-kanban-tracker/crm/run-tool.mjs crm_whoami`
-   - Test (Windows PowerShell): `node $HOME/Documents/se-kanban-tracker/crm/run-tool.mjs crm_whoami`
+   - Test (POSIX): `node ~/Documents/crm-tools/run-tool.mjs crm_whoami`
+   - Test (Windows PowerShell): `node $HOME/Documents/crm-tools/run-tool.mjs crm_whoami`
  auth/VPN issue.
 
 3. **Node. Required for CRM tools.js** 
@@ -1265,4 +1265,4 @@ On first invocation of `/crm-activity-sync` (no `config.json` exists):
 | Work repos | `crm-mapping.json` | User input, validated |
 | Work schedule (Sun-Thu vs Mon-Fri) | `config.json` | User input |
 | VPN script path | `config.json` | Discovered or created during setup |
-| CRM tool path | `config.json` | Default `~/Documents/se-kanban-tracker/crm/run-tool.mjs` |
+| CRM tool path | `config.json` | Default `~/Documents/crm-tools/run-tool.mjs` |
