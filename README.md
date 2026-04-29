@@ -26,7 +26,19 @@ cd ~/customer-skills
 bash scripts/install.sh
 ```
 
-The install script symlinks all 7 skill directories into `~/.copilot/skills/` so Clawpilot loads them globally.
+### Windows (PowerShell)
+
+```powershell
+git clone https://github.com/roie9876/clawpilot-skills.git $HOME\customer-skills
+cd $HOME\customer-skills
+pwsh scripts\install.ps1
+# or, if pwsh isn't installed:
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+```
+
+> Symlink creation on Windows needs Admin or Developer Mode. See [Windows Notes](#windows-notes).
+
+Both scripts symlink all 9 skill directories into `$HOME/.copilot/skills/` so Clawpilot loads them globally.
 
 ### Manual installation
 
@@ -384,10 +396,22 @@ Replace `~` with `%USERPROFILE%` in all paths:
 | `~/.copilot/skills/` | `%USERPROFILE%\.copilot\skills\` |
 | `~/customer-engagements/` | `%USERPROFILE%\customer-engagements\` |
 
-### Symlinks (PowerShell — run as Administrator)
+### Symlinks (PowerShell)
+
+Use the bundled installer:
 
 ```powershell
-$skills = @("meeting-prep", "customer-repo", "capture-meeting", "followups", "azure-answer", "architecture", "connect")
+pwsh scripts\install.ps1
+# or, on Windows PowerShell 5:
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+```
+
+It symlinks all 9 skills into `$HOME\.copilot\skills\` and prints clear errors if elevation is missing.
+
+Manual equivalent (if you prefer):
+
+```powershell
+$skills = @("meeting-prep", "customer-repo", "capture-meeting", "followups", "azure-answer", "architecture", "connect", "crm-activity-sync", "daily-activity-log")
 foreach ($skill in $skills) {
     New-Item -ItemType SymbolicLink `
         -Path "$env:USERPROFILE\.copilot\skills\$skill" `
@@ -401,7 +425,7 @@ foreach ($skill in $skills) {
 ### Alternative: Directory Junctions (no admin required)
 
 ```cmd
-for %s in (meeting-prep customer-repo capture-meeting followups azure-answer architecture connect) do (
+for %s in (meeting-prep customer-repo capture-meeting followups azure-answer architecture connect crm-activity-sync daily-activity-log) do (
     mklink /D "%USERPROFILE%\.copilot\skills\%s" "%USERPROFILE%\customer-skills\%s"
 )
 ```

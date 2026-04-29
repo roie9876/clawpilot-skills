@@ -36,6 +36,22 @@ entry to the correct MSX milestone, and creates CRM tasks.
 **This skill reads ONLY from `customer-engagements/`.** It never directly queries
 calendar, git repos, or email. That is `/daily-activity-log`'s job.
 
+## Platform Compatibility
+
+This skill runs on **macOS, Linux, and Windows**. Detect the OS first and pick the right command syntax. See `_shared/PLATFORM.md` (skills repo root) for the full translation table. Quick reference:
+
+| Action | macOS / Linux (bash) | Windows (PowerShell) |
+|--------|----------------------|----------------------|
+| Run node script | `node ~/path/script.mjs` | `node $HOME/path/script.mjs` |
+| Find node | `which node` | `Get-Command node` |
+| Install node | `brew install node` (macOS) / pkg mgr (Linux) | `winget install OpenJS.NodeJS` |
+| Run shell script | `bash ~/Scripts/x.sh` | `pwsh $HOME/Scripts/x.ps1` (provide PS1 alongside) |
+| Home dir | `~` or `$HOME` | `$HOME` |
+
+**VPN check note:** `~/Scripts/ensure-vpn.sh` is POSIX-only. On Windows, the user must connect Azure VPN Client manually before running this skill, or you must provide a PowerShell equivalent (`ensure-vpn.ps1`). If neither exists on Windows, ask the user to confirm VPN is connected and proceed.
+
+Default to POSIX commands; fall back to PowerShell when running on Windows native (not WSL, not Git Bash).
+
 ## Core Principles
 
 - **Single source of truth.** All activity evidence lives in `customer-engagements/`. This skill reads `activity-log.md` — nothing else. If an activity isn't logged there, it doesn't get synced to CRM.
@@ -71,7 +87,7 @@ full pipeline to work:
 | `customer-engagements/` folder | `~/customer-engagements/` exists with ≥1 customer | Run `/customer-repo` to scaffold |
 | Config file | `~/.copilot/crm-activity-sync/config.json` exists | Run `/crm-activity-sync setup` (Step 1) |
 | Activity logs populated | `activity-log.md` exists in ≥1 project | Run `/daily-activity-log` first |
-| Node.js | `/opt/homebrew/bin/node --version` | `brew install node` |
+| Node.js | `node --version` (POSIX) or `Get-Command node` (PowerShell) | macOS: `brew install node` · Windows: `winget install OpenJS.NodeJS` · Linux: distro pkg mgr |
 | M365 signed in | `m_m365_status` → signedIn:true | `m_m365_sign_in` |
 
 **Upstream dependency:** `/daily-activity-log` must run before `/crm-activity-sync`
@@ -1094,12 +1110,13 @@ these steps automatically on first invocation.
      git clone <se-kanban-tracker-repo-url> ~/Documents/se-kanban-tracker
      cd ~/Documents/se-kanban-tracker && npm install
      ```
-   - Test: `PATH="/opt/homebrew/bin:$PATH" node ~/Documents/se-kanban-tracker/crm/run-tool.mjs crm_whoami`
+   - Test (POSIX): `node ~/Documents/se-kanban-tracker/crm/run-tool.mjs crm_whoami`
+   - Test (Windows PowerShell): `node $HOME/Documents/se-kanban-tracker/crm/run-tool.mjs crm_whoami`
  auth/VPN issue.
 
 3. **Node. Required for CRM tools.js** 
-   - Check: `which node` or `/opt/homebrew/bin/node --version`
-   - If missing: `brew install node`
+   - Check: `which node` (POSIX) or `Get-Command node` (PowerShell)
+   - If missing: macOS → `brew install node` · Windows → `winget install OpenJS.NodeJS` · Linux → use the distro package manager
 
 4. **M365 signed  Needed for calendar, email, and Teams data.in** 
    - Check: `m_m365_status`

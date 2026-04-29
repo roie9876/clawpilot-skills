@@ -10,6 +10,19 @@ calendar context, prior meeting notes, email threads, open follow-ups, and
 facilitator notes from Microsoft 365. Write the brief to the customer engagement
 repo and commit it.
 
+## Platform Compatibility
+
+This skill runs on **macOS, Linux, and Windows**. Detect the OS before running shell commands and pick the right syntax. See `_shared/PLATFORM.md` (relative to the skills repo root) for the full translation table. Quick reference:
+
+| Action | macOS / Linux (bash) | Windows (PowerShell) |
+|--------|----------------------|----------------------|
+| Make dir | `mkdir -p X` | `New-Item -ItemType Directory -Force -Path X` |
+| List dir | `ls X` | `Get-ChildItem X` |
+| Open file in Edge | `open -a "Microsoft Edge" file` | `Start-Process msedge.exe file` |
+| Home dir | `~` or `$HOME` | `$HOME` |
+
+Detect OS via `$IsWindows` (PowerShell) or `[ "$(uname)" = "Darwin" ]` / `[ "$(uname)" = "Linux" ]` (bash). Default to POSIX, fall back to PowerShell on Windows.
+
 ## Core Principles
 
 - **Never fabricate context.** Only include information retrieved from M365 tools or the local customer repo. If a source is unavailable, say so explicitly in the brief.
@@ -269,10 +282,26 @@ Also write a standard `.md` file with the same content for git tracking:
 
    If the repo is not a git repo or the commit fails, inform the user but do not fail the skill — the brief is still written.
 
-6. **Open the HTML brief in Microsoft Edge:**
+6. **Open the HTML brief in Microsoft Edge** (use the syntax matching the host OS):
+
+   **macOS:**
    ```bash
-   open -a "Microsoft Edge" ~/customer-engagements/{slug}/projects/{project}/meetings/{YYYY-MM-DD}-{subject-slug}.html
+   open -a "Microsoft Edge" "$HOME/customer-engagements/{slug}/projects/{project}/meetings/{YYYY-MM-DD}-{subject-slug}.html" 2>/dev/null \
+     || open "$HOME/customer-engagements/{slug}/projects/{project}/meetings/{YYYY-MM-DD}-{subject-slug}.html"
    ```
+
+   **Linux:**
+   ```bash
+   xdg-open "$HOME/customer-engagements/{slug}/projects/{project}/meetings/{YYYY-MM-DD}-{subject-slug}.html"
+   ```
+
+   **Windows (PowerShell):**
+   ```powershell
+   $brief = "$HOME/customer-engagements/{slug}/projects/{project}/meetings/{YYYY-MM-DD}-{subject-slug}.html"
+   try { Start-Process msedge.exe $brief -ErrorAction Stop } catch { Invoke-Item $brief }
+   ```
+
+   If Edge is not installed, fall back to the OS default browser. Do not fail the skill if the open command fails — the brief is already written and committed.
 
 ## Error Handling
 

@@ -10,9 +10,20 @@
 
 set -euo pipefail
 
+# OS guard: warn if running on Windows native (cmd/PowerShell). Git Bash and WSL
+# report 'msys'/'cygwin'/'linux' which work fine here.
+case "${OSTYPE:-unknown}" in
+    darwin*|linux*|msys*|cygwin*)
+        ;;
+    *)
+        echo "Warning: unrecognized OS ($OSTYPE)."
+        echo "On Windows native, use 'pwsh scripts/install.ps1' instead."
+        ;;
+esac
+
 SKILLS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TARGET_DIR="$HOME/.copilot/skills"
-SKILLS=(meeting-prep customer-repo capture-meeting followups azure-answer architecture connect)
+SKILLS=(meeting-prep customer-repo capture-meeting followups azure-answer architecture connect crm-activity-sync daily-activity-log)
 
 echo "Customer Skills Installer"
 echo "========================="

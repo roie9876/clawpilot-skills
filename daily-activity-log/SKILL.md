@@ -11,6 +11,19 @@ a structured daily activity summary per customer project. Writes `activity-log.m
 customer-engagements folder, making customer-engagements the single source of
 truth for downstream consumers like `/crm-activity-sync`.
 
+## Platform Compatibility
+
+This skill runs on **macOS, Linux, and Windows**. Detect the OS first and pick the matching shell syntax. See `_shared/PLATFORM.md` (skills repo root) for the full translation table. Quick reference:
+
+| Action | macOS / Linux (bash) | Windows (PowerShell) |
+|--------|----------------------|----------------------|
+| List dir | `ls $HOME/customer-engagements/` | `Get-ChildItem $HOME/customer-engagements/` |
+| Find node | `which node` | `Get-Command node` |
+| Run git in repo | `cd $HOME/repo && git log ...` | `Set-Location $HOME/repo; git log ...` |
+| Home dir | `~` or `$HOME` | `$HOME` |
+
+Default to POSIX commands; use PowerShell on Windows native (not WSL/Git Bash).
+
 ## Core Principles
 
 - **Evidence-based only.** Every logged activity must trace to a concrete artifact: a git commit, a calendar event, or a sent email. Never infer or fabricate work.
@@ -75,7 +88,7 @@ full pipeline to work:
 | `customer-engagements/` folder | ✅ | `~/customer-engagements/` exists with ≥1 customer |
 | M365 signed in | ⚠️ Recommended | `m_m365_status` — needed for calendar + email + Teams chat sources |
 | Config file | ✅ | `~/.copilot/crm-activity-sync/config.json` — shared with crm-activity-sync |
-| Node.js | ⚠️ Only for CRM | `/opt/homebrew/bin/node --version` |
+| Node.js | ⚠️ Only for CRM | `node --version` (POSIX) or `Get-Command node` (PowerShell) |
 
 **Note:** This skill shares its config with `/crm-activity-sync`. If setup hasn't
 been run yet, it will trigger the setup flow (see crm-activity-sync Step 1).

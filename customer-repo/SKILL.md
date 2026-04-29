@@ -10,6 +10,19 @@ templates, tracking files, and a git repo that blocks pushes to keep customer
 data off remote servers. Supports customer-level scaffolding and optional
 per-project subfolders within each customer.
 
+## Platform Compatibility
+
+This skill runs on **macOS, Linux, and Windows**. Detect the OS first and pick the matching command syntax. See `_shared/PLATFORM.md` (skills repo root) for the full translation table. Quick reference:
+
+| Action | macOS / Linux (bash) | Windows (PowerShell) |
+|--------|----------------------|----------------------|
+| Make dir (idempotent) | `mkdir -p X` | `New-Item -ItemType Directory -Force -Path X \| Out-Null` |
+| Test dir exists | `[ -d X ]` | `Test-Path X` |
+| Make file executable | `chmod +x file` | (no-op on Windows — git for Windows runs hooks via sh.exe regardless) |
+| Home dir | `~` or `$HOME` | `$HOME` |
+
+On Windows, the pre-push hook still works because Git for Windows ships with `sh.exe` and runs hook scripts via it. The `chmod +x` step can simply be skipped.
+
 ## Core Principles
 
 - **Local-only data.** Customer engagement data never leaves the local machine via git. The repo is initialized with a pre-push hook that blocks all pushes. No remote is ever configured.
@@ -246,10 +259,16 @@ echo ""
 exit 1
 ```
 
-**Make the hook executable:**
+**Make the hook executable** (POSIX only — skip on Windows):
 
 ```bash
-chmod +x ~/customer-engagements/{customer-slug}/.git/hooks/pre-push
+# macOS / Linux / WSL / Git Bash
+chmod +x "$HOME/customer-engagements/{customer-slug}/.git/hooks/pre-push"
+```
+
+```powershell
+# Windows PowerShell — not needed. Git for Windows runs hook scripts via bundled
+# sh.exe regardless of file mode. Skip this step.
 ```
 
 **Create a commit covering whatever was created:**

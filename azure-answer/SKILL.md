@@ -10,6 +10,18 @@ comparisons, and service selection — using live web search data and optional
 Azure CLI verification. Every claim is backed by a cited source so the user
 can trust and forward the answer.
 
+## Platform Compatibility
+
+This skill runs on **macOS, Linux, and Windows**. The only shell command is `az` (Azure CLI), which works identically across OSes once installed. See `_shared/PLATFORM.md` for the full reference.
+
+| Action | macOS / Linux (bash) | Windows (PowerShell) |
+|--------|----------------------|----------------------|
+| Check if `az` exists | `command -v az \|\| echo missing` | `Get-Command az -ErrorAction SilentlyContinue` |
+| Run `az` command | `az version` | `az version` (same) |
+| Install Azure CLI | macOS: `brew install azure-cli` · Linux: see Azure docs | Windows: `winget install Microsoft.AzureCLI` |
+
+Default to POSIX commands; use PowerShell on Windows native (not WSL/Git Bash).
+
 ## Core Principles
 
 - **Never fabricate Azure information.** Every pricing figure, SKU name, capability claim, and service limit must be backed by a cited source (URL or CLI output). Do not rely on training data alone for facts that change frequently (pricing, quotas, region availability).
@@ -69,7 +81,13 @@ When the `az` CLI is available on the system, supplement web data with live quer
 **Check CLI availability first:**
 
 ```bash
+# macOS / Linux / WSL / Git Bash
 az version 2>/dev/null && echo "CLI available" || echo "CLI not available"
+```
+
+```powershell
+# Windows PowerShell
+if (Get-Command az -ErrorAction SilentlyContinue) { az version; "CLI available" } else { "CLI not available" }
 ```
 
 If available, use targeted commands based on question category:

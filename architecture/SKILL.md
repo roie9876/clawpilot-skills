@@ -9,6 +9,18 @@ Create professional architecture diagrams using the Draw.io MCP server
 (`drawio/create_diagram`) with verified Azure and AWS icons, and save them to
 the customer engagement repo's `architecture/` folder.
 
+## Platform Compatibility
+
+This skill runs on **macOS, Linux, and Windows**. Detect the OS first and pick the right syntax. See `_shared/PLATFORM.md` (skills repo root) for the full reference.
+
+| Action | macOS / Linux (bash) | Windows (PowerShell) |
+|--------|----------------------|----------------------|
+| Make dir | `mkdir -p X` | `New-Item -ItemType Directory -Force -Path X \| Out-Null` |
+| Search file content | `grep -i "pattern" file` | `Select-String -Pattern "pattern" -Path file` |
+| Home dir | `~` or `$HOME` | `$HOME` |
+
+Note: the icon-catalog grep examples in this skill use bash. On Windows PowerShell, substitute `Select-String -Pattern "<pattern>" -Path "$HOME/.copilot/skills/drawio-mcp-diagramming/references/<catalog>.txt"`.
+
 ## Core Principles
 
 - **Customer-scoped output.** All diagrams are saved to `~/customer-engagements/{slug}/architecture/` with a descriptive filename and committed to git.
@@ -280,8 +292,15 @@ Pass the complete `mxGraphModel` XML as the input. The MCP server validates the 
    - `event-driven-pipeline.drawio`
 
 3. **Create the directory if needed:**
+
    ```bash
-   mkdir -p ~/customer-engagements/{slug}/architecture
+   # macOS / Linux / WSL / Git Bash
+   mkdir -p "$HOME/customer-engagements/{slug}/architecture"
+   ```
+
+   ```powershell
+   # Windows PowerShell
+   New-Item -ItemType Directory -Force -Path "$HOME/customer-engagements/{slug}/architecture" | Out-Null
    ```
 
 4. **Check if the file exists** — If it does, read it and ask the user whether to overwrite, create a versioned copy (e.g., `network-topology-v2.drawio`), or skip.

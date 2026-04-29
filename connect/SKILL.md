@@ -14,6 +14,20 @@ and submit.
 **This skill is generic** — any Microsoft employee running Clawpilot can use it.
 No hardcoded names, paths, or roles. Everything is discovered at runtime.
 
+## Platform Compatibility
+
+This skill runs on **macOS, Linux, and Windows**. Detect the OS first and pick the right syntax. See `_shared/PLATFORM.md` (skills repo root) for the full reference.
+
+| Action | macOS / Linux (bash) | Windows (PowerShell) |
+|--------|----------------------|----------------------|
+| List dir | `ls $HOME/customer-engagements/` | `Get-ChildItem $HOME/customer-engagements/` |
+| Run node script | `node $HOME/path/run-tool.mjs ...` | `node $HOME/path/run-tool.mjs ...` (same) |
+| HTTP GET | `curl -s --max-time 3 http://...` | `Invoke-RestMethod -Uri http://... -TimeoutSec 3` |
+| Find executable | `which node` | `Get-Command node` |
+| Home dir | `~` or `$HOME` | `$HOME` |
+
+Default to POSIX commands; use PowerShell on Windows native (not WSL/Git Bash).
+
 ## Core Principles
 
 - **Never fabricate accomplishments.** Only include information retrieved from real data sources. If a source is unavailable, note the gap — do not invent achievements.
@@ -228,7 +242,13 @@ Extract any feedback received during the period — useful for both "Reflect" an
 Only if `~/customer-engagements/` exists:
 
 ```bash
-ls ~/customer-engagements/ 2>/dev/null
+# macOS / Linux / WSL / Git Bash
+ls "$HOME/customer-engagements/" 2>/dev/null
+```
+
+```powershell
+# Windows PowerShell
+Get-ChildItem -Path "$HOME/customer-engagements/" -ErrorAction SilentlyContinue
 ```
 
 For each customer with a repo:
@@ -254,7 +274,13 @@ Extract: deals progressed, milestones achieved, customer wins, pipeline contribu
 Only if the Kanban server responds at `localhost:3456`:
 
 ```bash
+# macOS / Linux / WSL / Git Bash
 curl -s --max-time 3 http://localhost:3456/api/tasks | jq '[.[] | select(.status == "done")]'
+```
+
+```powershell
+# Windows PowerShell
+try { Invoke-RestMethod -Uri http://localhost:3456/api/tasks -TimeoutSec 3 | Where-Object { $_.status -eq 'done' } } catch { }
 ```
 
 Extract: completed tasks with their descriptions and dates — evidence of execution.

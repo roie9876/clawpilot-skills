@@ -31,6 +31,18 @@ Key points:
 - `stakeholders.md` remains at the **customer** root.
 - A single customer can have multiple projects, each with its own followups.
 
+## Platform Compatibility
+
+This skill runs on **macOS, Linux, and Windows**. It is read-only — it just lists directories and reads files. Detect the OS and pick the right syntax. See `_shared/PLATFORM.md` (skills repo root) for the full table.
+
+| Action | macOS / Linux (bash) | Windows (PowerShell) |
+|--------|----------------------|----------------------|
+| List dir | `ls $HOME/customer-engagements/` | `Get-ChildItem $HOME/customer-engagements/` |
+| Test file exists | `[ -f file ]` | `Test-Path file` |
+| Home dir | `~` or `$HOME` | `$HOME` |
+
+Default to POSIX commands; use PowerShell on Windows native (not WSL/Git Bash).
+
 ## Core Principles
 
 - **Never fabricate content.** Only include action items found in followups.md files and emails retrieved from M365 tools. If a source is unavailable, say so explicitly — do not invent action items or email threads.

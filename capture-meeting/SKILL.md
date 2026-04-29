@@ -10,6 +10,17 @@ summary, key decisions, and action items. Action items are appended to the
 customer's followups.md. Notes and updated follow-ups are committed to the
 customer engagement repo.
 
+## Platform Compatibility
+
+This skill runs on **macOS, Linux, and Windows**. Detect the OS first and pick the right command syntax. See `_shared/PLATFORM.md` (skills repo root) for the full translation table. Quick reference:
+
+| Action | macOS / Linux (bash) | Windows (PowerShell) |
+|--------|----------------------|----------------------|
+| Make dir (idempotent) | `mkdir -p X` | `New-Item -ItemType Directory -Force -Path X \| Out-Null` |
+| Home dir | `~` or `$HOME` | `$HOME` |
+
+Default to POSIX commands; use PowerShell on Windows native (not WSL/Git Bash).
+
 ## Core Principles
 
 - **Never fabricate content.** Only include information retrieved from M365 tools or the local customer repo. If a source returned nothing, say so explicitly — do not invent discussion points, decisions, or action items.
@@ -210,8 +221,15 @@ Assemble the captured data into structured notes using the template below.
    - "Meeting notes already exist for this meeting. Overwrite, append, or skip?"
 
 3. **Create the meetings directory if needed:**
+
    ```bash
-   mkdir -p ~/customer-engagements/{slug}/projects/{project}/meetings
+   # macOS / Linux / WSL / Git Bash
+   mkdir -p "$HOME/customer-engagements/{slug}/projects/{project}/meetings"
+   ```
+
+   ```powershell
+   # Windows PowerShell
+   New-Item -ItemType Directory -Force -Path "$HOME/customer-engagements/{slug}/projects/{project}/meetings" | Out-Null
    ```
 
 4. **Write the meeting notes** using the `write` tool.
