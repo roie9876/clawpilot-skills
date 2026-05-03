@@ -4,6 +4,21 @@ Personal [Clawpilot](https://clawpilot.dev) skills for streamlining day-to-day c
 
 These skills bridge the gap between Microsoft 365 (where customer work happens) and VS Code / git repos (where technical work happens), using Clawpilot as the glue layer.
 
+## ⭐ Most-used: the CRM pipeline
+
+Four skills work as a single pipeline that turns your daily M365 / git activity into MSX (Dynamics 365) milestone tasks. This is the part most people care about — here's how the pieces fit:
+
+![CRM pipeline topology](docs/crm-pipeline-topology.png)
+
+| Skill | Role in the pipeline |
+|---|---|
+| [`/customer-repo`](customer-repo/SKILL.md) | **Foundation.** Scaffolds the per-customer folder structure that every other skill reads & writes inside. |
+| [`/daily-activity-log`](daily-activity-log/SKILL.md) | **Collector.** Aggregates calendar, sent emails, Teams chat, and git commits into one `activity-log.md` per project, classified by CRM task category. |
+| [`/crm-activity-sync`](crm-activity-sync/SKILL.md) | **Pusher.** Reads each `activity-log.md` and creates milestone tasks in MSX. Idempotent, auto-joins deal teams. |
+| [`/msx-crm`](msx-crm/SKILL.md) | **Backend tool layer.** Node CLI that talks to MSX (Dynamics 365). Used by `/crm-activity-sync` and available directly for ad-hoc CRM queries. |
+
+> Diagram source: [docs/crm-pipeline-topology.drawio](docs/crm-pipeline-topology.drawio) (regenerate with `python3 scripts/build-crm-topology.py`).
+
 ## Prerequisites
 
 | Requirement | Notes |
