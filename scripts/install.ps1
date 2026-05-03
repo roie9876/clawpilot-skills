@@ -26,7 +26,8 @@ $Skills = @(
     'connect',
     'crm-activity-sync',
     'daily-activity-log',
-    'msx-crm'
+    'msx-crm',
+    'sso-watcher'
 )
 
 Write-Host "Customer Skills Installer (Windows)"
