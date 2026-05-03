@@ -19,6 +19,24 @@ local M = {}
 
 local SSO_BUNDLE = "com.apple.AppSSOAgent"
 
+-- Default trusted bundle IDs used when the config does not specify its own list.
+-- These are the apps most likely to legitimately trigger an SSO prompt.
+local DEFAULT_TRUSTED_BUNDLES = {
+    "com.apple.AppSSOAgent",
+    "com.microsoft.teams",
+    "com.microsoft.edgemac",
+    "com.google.Chrome",
+    "org.mozilla.firefox",
+    "com.apple.Safari",
+}
+
+-- Paths under which the real AppSSOAgent binary must reside (SIP-protected).
+-- Not user-configurable: relaxing this would undermine spoofing protection.
+local SSO_TRUSTED_PATH_PREFIXES = {
+    "/System/Library/",
+    "/Library/Apple/",
+}
+
 -- Load config with sane defaults
 local function loadConfig()
     local configPath = os.getenv("HOME") .. "/.hammerspoon/sso-watcher-config.lua"
@@ -31,9 +49,21 @@ local function loadConfig()
         hs.alert.show("⚠️ SSO Watcher: 'account' not set in config!", 5)
         return nil
     end
+
     cfg.poll_interval = cfg.poll_interval or 3
     cfg.log_file      = cfg.log_file or (os.getenv("HOME") .. "/Scripts/sso-watcher-hammerspoon.log")
     cfg.cooldown      = cfg.cooldown or 15
+
+    -- notifications: enabled by default; set to false in config to suppress
+    if cfg.notifications == nil then cfg.notifications = true end
+
+    -- Build a fast lookup set from the config list (or fall back to defaults)
+    local bundles = cfg.trusted_bundles or DEFAULT_TRUSTED_BUNDLES
+    cfg._trusted_set = {}
+    for _, bid in ipairs(bundles) do
+        cfg._trusted_set[bid] = true
+    end
+
     return cfg
 end
 
@@ -58,11 +88,31 @@ end
 -- Find the AppSSOAgent app (system SSO broker from Company Portal)
 local function findSSOApp()
     local app = hs.application.find(SSO_BUNDLE)
-    if app then return app end
-    for _, a in ipairs(hs.application.runningApplications()) do
-        if (a:bundleID() or "") == SSO_BUNDLE then return a end
+    if not app then
+        for _, a in ipairs(hs.application.runningApplications()) do
+            if (a:bundleID() or "") == SSO_BUNDLE then
+                app = a
+                break
+            end
+        end
     end
-    return nil
+    if not app then return nil end
+
+    -- Validate the executable path to guard against bundle-ID spoofing.
+    local execPath = app:path() or ""
+    local trusted = false
+    for _, prefix in ipairs(SSO_TRUSTED_PATH_PREFIXES) do
+        if execPath:sub(1, #prefix) == prefix then
+            trusted = true
+            break
+        end
+    end
+    if not trusted then
+        log("SECURITY: AppSSOAgent found but path not trusted: " .. execPath)
+        return nil
+    end
+
+    return app
 end
 
 -- Recursively search an AX element tree for a UI element whose
@@ -177,8 +227,19 @@ end
 -- Cooldown tracker
 local cooldownUntil = 0
 
+-- Send a macOS notification (no-op when notifications are disabled in config)
+local function notify(title, body)
+    if not CFG.notifications then return end
+    hs.notify.new({
+        title           = title,
+        informativeText = body,
+        withdrawAfter   = 6,
+    }):send()
+end
+
 -- Main check function
-local function checkForSSO()
+-- triggeringAppName: display name of the app whose activation caused this check
+local function checkForSSO(triggeringAppName)
     if os.time() < cooldownUntil then return end
 
     local app = findSSOApp()
@@ -223,6 +284,8 @@ local function checkForSSO()
                 if clickElement(btn) then
                     log("SUCCESS: Clicked '" .. btnText .. "' — SSO complete")
                     cooldownUntil = os.time() + CFG.cooldown
+                    local appLabel = triggeringAppName or "Unknown app"
+                    notify("SSO Handled", "Signed in automatically for " .. appLabel)
                     return
                 end
             end
@@ -231,18 +294,22 @@ local function checkForSSO()
     end)
 end
 
--- Polling timer
-M._timer = hs.timer.doEvery(CFG.poll_interval, checkForSSO)
+-- Polling timer — no triggering app known, pass nil
+M._timer = hs.timer.doEvery(CFG.poll_interval, function() checkForSSO(nil) end)
 M._timer:start()
 
--- App activation watcher — trigger when ANY app activates (SSO agent pops up
--- in response to auth requests from any app)
-M._watcher = hs.application.watcher.new(function(appName, eventType, _)
-    if eventType == hs.application.watcher.activated or
-       eventType == hs.application.watcher.unhidden or
-       eventType == hs.application.watcher.launched then
-        hs.timer.doAfter(0.5, checkForSSO)
+-- App activation watcher — only trigger for trusted apps that legitimately
+-- cause SSO prompts; all other activations are ignored.
+M._watcher = hs.application.watcher.new(function(appName, eventType, app)
+    if eventType ~= hs.application.watcher.activated and
+       eventType ~= hs.application.watcher.unhidden and
+       eventType ~= hs.application.watcher.launched then
+        return
     end
+    local bid = (app and app:bundleID()) or ""
+    if not CFG._trusted_set[bid] then return end
+    local displayName = appName or bid
+    hs.timer.doAfter(0.5, function() checkForSSO(displayName) end)
 end)
 M._watcher:start()
 
