@@ -14,12 +14,15 @@ Accessibility API access with zero TCC headaches.
 
 ## How It Works
 
-1. Hammerspoon polls the target app's AX (Accessibility) tree every 3 seconds
-2. Also triggers instantly when the app gains focus
-3. Looks for SSO dialog markers: "Pick an account", "Sign in to your account", etc.
-4. Finds the configured email in the AX tree and clicks it
-5. Waits 0.8s then clicks the "Continue" / "Next" / "Sign in" button
-6. 15-second cooldown after each successful click to avoid loops
+1. The SSO account picker is NOT inside Clawpilot — it's rendered by
+   **AppSSOAgent** (`com.apple.AppSSOAgent`), the macOS Enterprise SSO broker
+   from Company Portal
+2. Hammerspoon polls AppSSOAgent's AX (Accessibility) tree every 3 seconds
+3. Also triggers on any app activation (SSO agent may pop up for any app)
+4. Looks for SSO dialog markers: "Accounts found", "Sign in to your account", etc.
+5. Finds the AXRow containing the configured email and clicks it
+6. Waits 0.8s then clicks the "Continue" button
+7. 15-second cooldown after each successful click to avoid loops
 
 ## Files
 
@@ -75,12 +78,14 @@ Edit `~/.hammerspoon/sso-watcher-config.lua`:
 ```lua
 return {
     account       = "user@microsoft.com",   -- email to auto-select
-    app_name      = "Clawpilot",            -- target app name
     poll_interval = 3,                       -- seconds between checks
     cooldown      = 15,                      -- seconds after successful click
     log_file      = os.getenv("HOME") .. "/Scripts/sso-watcher-hammerspoon.log",
 }
 ```
+
+The watcher always monitors `AppSSOAgent` (`com.apple.AppSSOAgent`) — the system SSO
+broker. No need to configure which app triggers the SSO dialog.
 
 After editing, reload Hammerspoon: click the Hammerspoon menu bar icon → Reload Config,
 or run `hs -c "hs.reload()"` from terminal.

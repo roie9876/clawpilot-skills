@@ -4,7 +4,6 @@
 # Usage:
 #   bash install.sh                           # interactive — prompts for email
 #   bash install.sh user@microsoft.com        # non-interactive
-#   bash install.sh user@microsoft.com MyApp  # custom app name (default: Clawpilot)
 #
 # What it does:
 #   1. Installs Hammerspoon via Homebrew (if missing)
@@ -15,6 +14,10 @@
 #   6. Enables Hammerspoon auto-launch at login
 #   7. Reloads Hammerspoon config
 #   8. Prints TCC permission instructions
+#
+# The SSO dialog is owned by AppSSOAgent (com.apple.AppSSOAgent), a
+# system process from Company Portal / Microsoft Enterprise SSO. The
+# watcher monitors that process, not the requesting app.
 #
 # Idempotent — safe to run multiple times.
 
@@ -35,7 +38,6 @@ LOG_DIR="$HOME/Scripts"
 
 # ─── Parse arguments ─────────────────────────────────────────────────
 ACCOUNT="${1:-}"
-APP_NAME="${2:-Clawpilot}"
 
 if [ -z "$ACCOUNT" ]; then
     # Try to read from existing config
@@ -65,8 +67,8 @@ echo ""
 echo "SSO Watcher Installer"
 echo "====================="
 echo "  Account:  $ACCOUNT"
-echo "  App:      $APP_NAME"
 echo "  Target:   $HS_DIR"
+echo "  Watches:  AppSSOAgent (com.apple.AppSSOAgent)"
 echo ""
 
 # ─── Step 1: Install Hammerspoon ─────────────────────────────────────
@@ -94,10 +96,10 @@ echo "✅ Copied $LUA_MODULE → $HS_DIR/"
 # ─── Step 4: Write config ────────────────────────────────────────────
 cat > "$HS_DIR/$CONFIG_FILE" << EOF
 -- SSO Watcher Configuration
--- Edit this file to change the target account or app.
+-- The watcher monitors AppSSOAgent (com.apple.AppSSOAgent) which is the
+-- system SSO broker from Company Portal / Microsoft Enterprise SSO.
 return {
     account       = "$ACCOUNT",
-    app_name      = "$APP_NAME",
     poll_interval = 3,
     cooldown      = 15,
     log_file      = os.getenv("HOME") .. "/Scripts/sso-watcher-hammerspoon.log",
