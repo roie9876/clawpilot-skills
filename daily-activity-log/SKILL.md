@@ -392,7 +392,13 @@ For each target date, collect from all sources in parallel.
 - **2d.** SSP Teams Chat (registered SSP chats)
 - **2e.** Customer Teams Chat (registered customer chats)
 - **2f.** Relevance Classification (filter for all text sources)
-- **2g.** Content-Based Chat Discovery (unmapped chats — LLM-driven)
+- **2g.** Content-Based Chat Discovery (unmapped chats — LLM-driven) ⚠️ **MANDATORY — see gate below**
+
+> **⚠️ Step 2g is NON-OPTIONAL.** Steps 2a–2e only scan pre-registered sources.
+> Step 2g is the only mechanism that discovers NEW customer chats (ad-hoc meetings,
+> EXT support cases, CritSit chats, 1:1s about customer work). Skipping it causes
+> silent data loss — entire customer interactions will be missing from the daily log.
+> A mandatory gate before Step 3 enforces this.
 
 ### 2a. Work Repo Git History
 
@@ -807,6 +813,32 @@ what work was done on the project?"**
 | Message is in Hebrew/mixed language | Classify based on meaning, regardless of language. Technical Hebrew = relevant. |
 | Message references a shared document | Relevant — document sharing is work activity, even if the text is brief ("check this doc"). |
 | Ambiguous message (could be social or work) | When in doubt, include it. Better to over-log slightly than miss real work. |
+
+---
+
+## ⛔ Pre-Synthesis Gate (MANDATORY before Step 3)
+
+**DO NOT proceed to Step 3 until ALL evidence sources have been executed.**
+This gate exists because Step 2g (content-based chat discovery) is the most
+commonly skipped step — it's the heaviest and runs last — but it catches
+customer interactions that NO other step can find.
+
+Confirm each source was executed (not just "no results" — actually ran):
+
+| # | Source | Executed? |
+|---|--------|-----------|
+| 2a | Git repos scanned | ☐ |
+| 2b | Calendar events scanned | ☐ |
+| 2c | Sent emails scanned | ☐ |
+| 2d | SSP chats scanned | ☐ |
+| 2e | Customer chats scanned | ☐ |
+| 2f | Relevance classification applied | ☐ |
+| **2g** | **Content-based chat discovery (unmapped chats)** | **☐** |
+
+**If 2g was not executed → STOP and run it now before continuing.**
+
+A "no results" from 2g is fine (it means no unmapped chats had customer content).
+But "not executed" is a skill violation — it guarantees silent data loss.
 
 ---
 
