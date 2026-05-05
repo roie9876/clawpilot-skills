@@ -96,13 +96,45 @@ echo "✅ Copied $LUA_MODULE → $HS_DIR/"
 # ─── Step 4: Write config ────────────────────────────────────────────
 cat > "$HS_DIR/$CONFIG_FILE" << EOF
 -- SSO Watcher Configuration
--- The watcher monitors AppSSOAgent (com.apple.AppSSOAgent) which is the
--- system SSO broker from Company Portal / Microsoft Enterprise SSO.
+-- Edit this file and reload Hammerspoon to apply changes:
+--   hs -c "hs.reload()"   OR   click Hammerspoon menu bar → Reload Config
+
 return {
-    account       = "$ACCOUNT",
+    -- ── Required ──────────────────────────────────────────────────────
+    -- Microsoft account email to auto-select in the SSO dialog.
+    account = "$ACCOUNT",
+
+    -- ── Notifications ─────────────────────────────────────────────────
+    -- Show a macOS notification each time SSO is handled automatically.
+    -- Set to false to suppress notifications.
+    notifications = true,
+
+    -- ── Trusted apps ──────────────────────────────────────────────────
+    -- Only activations from apps in this list can trigger the watcher.
+    -- Remove an entry to stop watching that app; add a bundle ID to include
+    -- a new one. Find an app's bundle ID with:
+    --   osascript -e 'id of app "AppName"'
+    -- Set to nil to watch ALL app activations (less secure, not recommended).
+    trusted_bundles = {
+        "com.apple.AppSSOAgent",   -- the SSO broker itself (keep this)
+        "com.microsoft.teams",
+        "com.microsoft.edgemac",
+        "com.google.Chrome",
+        "org.mozilla.firefox",
+        "com.apple.Safari",
+        -- "com.yourcompany.yourapp",
+    },
+
+    -- ── Timing ────────────────────────────────────────────────────────
+    -- Seconds between background polls for the SSO dialog.
     poll_interval = 3,
-    cooldown      = 15,
-    log_file      = os.getenv("HOME") .. "/Scripts/sso-watcher-hammerspoon.log",
+
+    -- Seconds to wait after a successful auto-sign-in before trying again.
+    -- Prevents accidental re-clicks if the dialog briefly reappears.
+    cooldown = 15,
+
+    -- ── Logging ───────────────────────────────────────────────────────
+    log_file = os.getenv("HOME") .. "/Scripts/sso-watcher-hammerspoon.log",
 }
 EOF
 echo "✅ Config written → $HS_DIR/$CONFIG_FILE"
