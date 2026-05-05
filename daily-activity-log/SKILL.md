@@ -1190,7 +1190,7 @@ No CRM mapping (logged but won't sync):
 When running as a scheduled automation (e.g., daily at 07:30):
 
 1. Run for yesterday (or last workday).
-2. Process all customers/projects.
+2. **Auto-discover customers** by scanning `~/customer-engagements/*/crm-mapping.json` — process every customer that has a `crm-mapping.json` with `customer_type` set. No hardcoded customer list.
 3. Skip already-logged dates.
 4. Send a Teams summary only if new entries were created.
 5. No user interaction — fully automated.
@@ -1198,7 +1198,9 @@ When running as a scheduled automation (e.g., daily at 07:30):
 **Automation prompt:**
 ```
 Run /daily-activity-log for yesterday.
-Process all customers. Skip already-logged dates.
+Auto-discover all customers by scanning ~/customer-engagements/*/crm-mapping.json —
+process every customer that has a crm-mapping.json with customer_type set.
+Skip already-logged dates.
 If new entries were created, send a brief Teams summary.
 If errors occur, include them in the summary.
 ```
