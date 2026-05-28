@@ -8,6 +8,12 @@
 //   Option B (clone):   git clone <MCAPS-IQ-repo> lib/mcaps-iq
 //   The lib/ directory is .gitignored.
 
+// Use isolated Azure CLI config to avoid conflicts with VS Code's az sessions
+import { homedir } from 'node:os';
+if (!process.env.AZURE_CONFIG_DIR) {
+  process.env.AZURE_CONFIG_DIR = `${homedir()}/.azure-msft`;
+}
+
 import { createAuthService } from './lib/mcaps-iq/mcp/msx/src/auth.js';
 import { createCrmClient } from './lib/mcaps-iq/mcp/msx/src/crm.js';
 // ALLOWED_ENTITY_SETS not used; CRM_QUERY_MAX_RECORDS inlined
