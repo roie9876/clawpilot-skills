@@ -207,16 +207,21 @@ def generate_nudge_message(context):
     return "continue"
 
 def send_nudge(message):
-    """Send a message to VS Code Copilot chat via keyboard."""
+    """Send a message to VS Code Copilot chat via Command Palette (layout-independent)."""
     script = f'''
 tell application "Code" to activate
 delay 0.5
 tell application "System Events"
     tell process "Code"
-        key code 37 using {{control down}}
+        -- Open Command Palette (Cmd+Shift+P)
+        key code 35 using {{command down, shift down}}
+        delay 0.5
+        -- Type command to focus chat input
+        keystroke "chat focus input"
         delay 0.3
-        keystroke "a" using {{command down}}
-        delay 0.1
+        keystroke return
+        delay 0.4
+        -- Type message and send
         keystroke "{message}"
         delay 0.2
         keystroke return

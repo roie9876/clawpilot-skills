@@ -68,7 +68,7 @@ detect_spinner() {
     ! images_are_same "$cap1" "$cap2"
 }
 
-# Send "continue" to Copilot Chat via keyboard
+# Send message to Copilot Chat via Command Palette (layout-independent)
 nudge_copilot() {
     local message="${1:-$NUDGE_MESSAGE}"
     log "NUDGE: Sending '$message' to Copilot Chat"
@@ -78,12 +78,15 @@ tell application "Code" to activate
 delay 0.5
 tell application "System Events"
     tell process "Code"
-        -- Ctrl+L focuses the Copilot Chat input in VS Code
-        key code 37 using {control down}
+        -- Open Command Palette (Cmd+Shift+P)
+        key code 35 using {command down, shift down}
+        delay 0.5
+        -- Type command to focus chat input
+        keystroke "chat focus input"
         delay 0.3
-        -- Select all existing text and replace with our message
-        keystroke "a" using {command down}
-        delay 0.1
+        keystroke return
+        delay 0.4
+        -- Type our message and send
         keystroke "${message}"
         delay 0.2
         keystroke return
