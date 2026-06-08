@@ -1,0 +1,18 @@
+{
+  "name": "copilot-nudge-server",
+  "displayName": "Copilot Nudge Server",
+  "description": "Exposes a local HTTP endpoint to send messages to Copilot Agent chat sessions without UI interaction",
+  "version": "0.0.1",
+  "engines": { "vscode": "^1.100.0" },
+  "categories": ["Other"],
+  "activationEvents": ["*"],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "copilot-nudge.sendMessage",
+        "title": "Copilot Nudge: Send Message to Active Session"
+      }
+    ]
+  }
+}

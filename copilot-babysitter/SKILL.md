@@ -4,85 +4,192 @@
 Monitor the VS Code GitHub Copilot Agent and automatically nudge it to continue
 when it stalls, stops reporting progress, or waits unnecessarily for user input.
 
-## How It Works
+**Key capability**: Works through macOS screen  no need to keep the screen unlocked.lock 
 
-1. **Screenshot-based detection**: Takes periodic screenshots of the Copilot Chat panel
-2. **Stall detection**: If the panel doesn't change for 45 seconds (configurable), it's stalled
-3. **Spinner check**: Before nudging, verifies there's no animation (which means agent is still thinking)
-4. **Nudge action**: Sends "continue" to the Copilot Chat input via keyboard shortcuts
-5. **Backoff**: After 5 consecutive nudges, backs off for 5 minutes
+## Setup (One-Time)
 
-## Usage
+### Prerequisites
+- macOS
+- VS Code with GitHub Copilot extension
+- Clawpilot (for automation scheduling)
 
-### Start babysitter
-```bash
-~/.copilot/skills/copilot-babysitter/babysitter.sh start
+### Install the copilot-nudge-server Extension
+
+The babysitter relies on a small VS Code extension that runs an HTTP server inside VS Code's
+extension host process. This allows sending messages to Copilot Chat  evenprogrammatically 
+when the screen is locked.
+
+**Install steps:**
+
+1. Copy the extension to VS Code's extensions folder:
+   ```bash
+   mkdir -p ~/.vscode/extensions/copilot-nudge-server-0.0.1
+   cp extension/extension.js ~/.vscode/extensions/copilot-nudge-server-0.0.1/
+   cp extension/package.json ~/.vscode/extensions/copilot-nudge-server-0.0.1/
+   ```
+
+ "Developer: Reload Window")
+
+3. Verify the extension is running:
+   ```bash
+   curl -s http://127.0.0.1:19876/health
+   # Expected: {"status":"ok","port":19876,"version":2}
+   ```
+
+**Why this works through screen lock:**
+- The extension runs as a Node.js HTTP server inside VS Code's extension host process
+- It uses internal VS Code commands (`workbench.action.chat. no keyboard/UI injectionopen`) 
+- The HTTP server stays active regardless of display sleep or screen lock state
+- Messages are queued by Copilot when the agent is busy; processed in order when ready
+
+### Register the Automation in Clawpilot
+
+Create a Clawpilot automation that runs every 2 minutes:
+- Name: "Copilot Agent Monitor"
+- Schedule: "every 2 minutes"
+- Prompt: (see the automation prompt template in this skill)
+
+## Architecture (Clawpilot Automation Mode)
+
+The babysitter runs as a Clawpilot automation (every 2 minutes). Each run:
+
+1. **Check  `stat -f "%m"` on the session file vs current timestaleness** 
+2. **If active (< no action needed, report OK90s)** 
+3. **If stalled (> diagnose and nudge:90s)** 
+   a. Try HTTP nudge first (works through screen lock)
+   b. If HTTP fails, check screen lock status
+   c. Read session context for what agent was doing
+   d. Determine if agent needs nudge or hit real blocker
+   e. Send contextual nudge OR alert Roie via Teams
+4. **Post-nudge  60s after nudge, re-check timestamp changedverification** 
+
+## Screen Lock Handling
+
+**Problem**: When macOS screen is locked, all UI automation (osascript keystrokes) silently
+ text goes to the lock screen password field. osascript still returns exit 0.fails 
+
+**Solution**: The HTTP nudge bypasses this entirely. The decision tree is:
+
+```
+1. Try HTTP nudge (curl POST to :19876)
+ done (works through screen lock!)
+
+      2. Check screen lock (ioreg)
+ Teams alert only, cannot nudge via UI
+ try UI nudge (osascript fallback)
 ```
 
-### Stop babysitter
+**Screen lock detection:**
 ```bash
-~/.copilot/skills/copilot-babysitter/babysitter.sh stop
+ioreg -n Root -d1 -w0 | grep -q '"IOConsoleLocked" = Yes'
+# Exit 0 = screen IS locked, Exit 1 = screen is unlocked
 ```
 
-### Check status
+## Nudge Methods
+
+### PRIMARY: HTTP (Non-UI, Works Through Screen Lock)
+
 ```bash
-~/.copilot/skills/copilot-babysitter/babysitter.sh status
+curl -s -X POST http://127.0.0.1:19876/nudge \
+  -H "Content-Type: application/json" \
+  -d '{"message": "YOUR_MESSAGE"}'
 ```
 
-### Test detection (without nudging)
+**Health check** (verify extension is running):
 ```bash
-~/.copilot/skills/copilot-babysitter/babysitter.sh test
+curl -s http://127.0.0.1:19876/health
+# Returns: {"status":"ok","port":19876,"version":2}
 ```
 
-### Manual nudge
+**File-based alternative** (if HTTP unreachable):
 ```bash
-~/.copilot/skills/copilot-babysitter/babysitter.sh nudge "please continue working"
+echo 'YOUR_MESSAGE' > ~/.copilot/nudge-queue.txt
+```
+The extension polls this file every 2 seconds.
+
+### FALLBACK: UI (Only When HTTP Fails AND Screen Unlocked)
+
+```applescript
+tell application "Code" to activate
+delay 0.5
+tell application "System Events"
+    tell process "Code"
+        key code 35 using {command down, shift down}  -- Cmd+Shift+P
+        delay 0.5
+        keystroke "chat focus input"
+        delay 0.3
+        keystroke return
+        delay 0.4
+        keystroke "YOUR_MESSAGE_HERE"
+        delay 0.2
+        keystroke return
+    end tell
+end tell
 ```
 
-## Configuration
+## Session File Monitoring
 
-Set via environment variables before starting:
+**Target session** (update these for your workspace):
+- Workspace hash: `680f52b117f3c92a8c4998a69b70dacc`
+- Session ID: `3df56667-99c5-4383-ac30-7acb02f89aa9`
+- Full path: `~/Library/Application Support/Code/User/workspaceStorage/{hash}/chatSessions/{sessionId}.jsonl`
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CHECK_INTERVAL` | 10 | Seconds between screenshot checks |
-| `STALL_THRESHOLD` | 45 | Seconds of no change before nudging |
-| `NUDGE_MESSAGE` | "continue" | Message sent to Copilot |
-| `MAX_NUDGES` | 5 | Max consecutive nudges before backing off |
-| `COOLDOWN_AFTER_NUDGE` | 30 | Seconds to wait after each nudge |
-| `PANEL_X` | 1020 | X coordinate of panel capture region |
-| `PANEL_Y` | 80 | Y coordinate of panel capture region |
-| `PANEL_W` | 900 | Width of capture region |
-| `PANEL_H` | 600 | Height of capture region |
+**Staleness check**:
+```bash
+stat -f "%m" "$SESSION_FILE" && date +%s
+ stalled
+```
 
-## Panel Region Calibration
+## Auto-Nudge Policy
 
-The default coordinates assume the Copilot Chat panel is on the right side of a 1920px wide display.
-To calibrate for your setup:
+1. **First stall detection**: Read context, send contextual nudge
+2. **Second consecutive stall** (nudge didn't work): Try again with different message
+3. **Third consecutive stall**: Alert Roie via  "Agent not responding to nudges"Teams 
+4. **After 5 failed nudges**: Stop trying, send Teams alert, wait for manual intervention
 
-1. Run `babysitter.sh test` — this captures the panel
-2. Check `~/.copilot/copilot-babysitter-state/test1.png` to see what's being captured
-3. Adjust `PANEL_X`, `PANEL_Y`, `PANEL_W`, `PANEL_H` as needed
+**Nudge messages should be  read what the agent was doing and tell it what to do next. Examples:contextual** 
+- "The 99.1% pass rate is acceptable. Continue with lifecycle tests."
+- "Continue with the next  node drain."test 
+- "Yes, proceed with that approach."
 
-## Logs
+Do NOT just send " the agent responds better to specific instructions.continue" 
 
-All activity is logged to `~/.copilot/copilot-babysitter.log`
+## Teams Status Updates
+
+Send Roie a brief status update every 3rd run (~6 minutes):
+- 1-2 lines max
+- What the agent is currently doing
+- Any issues detected
+
+## Helper Tools
+
+### supervisor.py (status/read)
+```bash
+python3 ~/.copilot/skills/copilot-babysitter/supervisor.py status
+python3 ~/.copilot/skills/copilot-babysitter/supervisor.py read 3
+```
+
+**Known issues**:
+- Can crash on NoneType (line 323) if context  handle gracefullyempty 
+- The session file may be very  use the header for quick readslarge 
 
 ## Requirements
 
-- macOS (uses `screencapture`, `sips`, `osascript`)
-- VS Code with GitHub Copilot extension
-- Accessibility permissions for Terminal/Clawpilot (System Settings → Privacy → Accessibility)
+| Component | Purpose | Required? |
+|-----------|---------|-----------|
+| copilot-nudge-server extension | HTTP nudge (primary) | **Yes** |
+| Accessibility permissions | UI fallback only | No (if HTTP works) |
+| macOS `ioreg` | Screen lock detection | Yes |
+| Clawpilot automation | Scheduling | Yes |
 
 ## Known Limitations
 
-- Only works when VS Code window is on the screen (can be behind other windows but not minimized)
-- Screenshot comparison is pixel-based — changing themes or resizing panels needs recalibration
-- The Ctrl+L shortcut must be mapped to "Focus Chat Input" in VS Code (default in Copilot)
-- Doesn't distinguish between "agent asking a real question" vs "agent just paused" — it always sends "continue"
+- If VS Code crashes or reloads, extension reactivates automatically on next startup
+- Session file can be very large ( too big to parse last line efficiently300MB+) 
+- osascript returns exit 0 even when keystrokes fail (UI fallback only)
+- Extension uses port 19876; if port is taken it tries 19877
 
-## Future Improvements
+## Extension Source
 
-- [ ] Smart detection: OCR the last message to decide if it's a real question vs idle
-- [ ] VS Code extension approach: A tiny extension that exposes agent state via a file/socket
-- [ ] Multiple nudge strategies: "continue" for idle, "yes" for confirmations, "skip" for blockers
+The extension source is in `extension/` in this repo. See `extension/extension.js` and
+`extension/package.json`.
