@@ -27,6 +27,7 @@ from datetime import datetime
 STALL_THRESHOLD = int(os.environ.get("STALL_THRESHOLD", "60"))  # seconds
 CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", "15"))    # seconds
 MAX_NUDGES = int(os.environ.get("MAX_NUDGES", "5"))
+IN_PROGRESS_GRACE = int(os.environ.get("IN_PROGRESS_GRACE", "180"))
 NUDGE_PORTS = [int(p) for p in os.environ.get("NUDGE_PORTS", "19876,19877").split(",") if p.strip()]
 WORKSPACE_STORAGE = Path.home() / "Library/Application Support/Code/User/workspaceStorage"
 LOG_FILE = Path.home() / ".copilot/copilot-supervisor.log"
@@ -38,8 +39,13 @@ BLOCKER_PHRASES = (
     "need your confirmation",
     "waiting for your confirmation",
     "waiting for approval",
+    "waiting for manual",
     "approve a tool",
     "manual input",
+    "blocked on",
+    "can't proceed",
+    "cannot proceed",
+    "need input",
 )
 
 def text_value(value):
@@ -217,10 +223,10 @@ def determine_action(context, stall_duration):
                 "suggestion": None,
             }
 
-    if context.get("request_in_progress"):
+    if context.get("request_in_progress") and stall_duration < IN_PROGRESS_GRACE:
         return {
             "action": "wait",
-            "reason": "Latest Copilot request is still in progress",
+            "reason": f"Latest Copilot request still appears in progress inside {IN_PROGRESS_GRACE}s grace window",
             "suggestion": None,
         }
     
@@ -239,10 +245,10 @@ def generate_nudge_message(context):
     tools = context.get("recent_tool_calls", [])
     
     response_text = "\n".join(context.get("last_response_text", []))
-    for line in response_text.splitlines():
+    for line in reversed(response_text.splitlines()):
         stripped = line.strip()
         if stripped:
-            return f"Continue from your last step: {stripped[:180]}"
+            return f"You appear idle. Continue from your last stated work: {stripped[:180]}"
 
     # If agent ran commands, likely it's done with a step and needs to continue
     if tools and all(t.get("complete") for t in tools[-3:]):
