@@ -32,6 +32,20 @@ WORKSPACE_STORAGE = Path.home() / "Library/Application Support/Code/User/workspa
 LOG_FILE = Path.home() / ".copilot/copilot-supervisor.log"
 STATE_FILE = Path.home() / ".copilot/copilot-supervisor-state.json"
 NUDGE_QUEUE_FILE = Path.home() / ".copilot/nudge-queue.txt"
+BLOCKER_PHRASES = (
+    "before editing, let me confirm",
+    "please confirm",
+    "need your confirmation",
+    "waiting for your confirmation",
+    "waiting for approval",
+    "approve a tool",
+    "manual input",
+)
+
+def text_value(value):
+    if isinstance(value, dict):
+        return str(value.get("value") or "")
+    return str(value or "")
 
 def log(msg):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -96,22 +110,27 @@ def read_session_context(session_file: Path):
         if requests:
             last_req = requests[-1]
             resp = last_req.get("response", [])
+            context["request_in_progress"] = last_req.get("result") is None
             
             for item in resp:
                 if not isinstance(item, dict):
                     continue
                 kind = item.get("kind", "")
+
+                item_text = text_value(item.get("value"))
+                if item_text:
+                    context["last_response_text"].append(item_text)
                 
                 if kind == "toolInvocationSerialized":
                     inv_msg_obj = item.get("invocationMessage", {})
-                    inv_msg = inv_msg_obj.get("value", "") if isinstance(inv_msg_obj, dict) else str(inv_msg_obj)[:200]
+                    inv_msg = text_value(inv_msg_obj)
                     is_complete = item.get("isComplete", False)
                     is_confirmed = item.get("isConfirmed")
                     
                     tool_info = {
                         "message": inv_msg[:200],
                         "complete": is_complete,
-                        "needs_confirmation": is_confirmed is None or is_confirmed == False,
+                        "needs_confirmation": is_confirmed is False,
                     }
                     context["recent_tool_calls"].append(tool_info)
             
@@ -144,7 +163,7 @@ def read_session_context(session_file: Path):
                 if isinstance(v, list):
                     for item in v:
                         if isinstance(item, dict) and item.get("kind") == "toolInvocationSerialized":
-                            if not item.get("isConfirmed"):
+                            if item.get("isConfirmed") is False:
                                 context["agent_state"] = "waiting_confirmation"
             except json.JSONDecodeError:
                 continue
@@ -159,6 +178,8 @@ def determine_action(context, stall_duration):
     state = context.get("agent_state", "unknown")
     last_msg = context.get("last_user_message") or ""
     tools = context.get("recent_tool_calls", [])
+    response_text = "\n".join(context.get("last_response_text", []))
+    response_text_lc = response_text.lower()
     
     # If agent hit an error
     if state == "error":
@@ -177,6 +198,13 @@ def determine_action(context, stall_duration):
                 "reason": f"Agent needs tool approval: {pending[-1]['message'][:100]}",
                 "suggestion": "The agent is waiting for you to approve a tool execution.",
             }
+
+    if any(phrase in response_text_lc for phrase in BLOCKER_PHRASES):
+        return {
+            "action": "approve",
+            "reason": "Agent appears to be asking for user input or confirmation.",
+            "suggestion": summarize_blocker(response_text),
+        }
     
     # Agent seems stalled (no activity for STALL_THRESHOLD)
     # Analyze the context to determine best response
@@ -188,6 +216,13 @@ def determine_action(context, stall_duration):
                 "reason": "Last tool call may still be running",
                 "suggestion": None,
             }
+
+    if context.get("request_in_progress"):
+        return {
+            "action": "wait",
+            "reason": "Latest Copilot request is still in progress",
+            "suggestion": None,
+        }
     
     # Agent finished its work and is idle — check if it completed the user's mission
     # or if it stopped midway
@@ -203,12 +238,25 @@ def generate_nudge_message(context):
     title = context.get("session_title", "")
     tools = context.get("recent_tool_calls", [])
     
+    response_text = "\n".join(context.get("last_response_text", []))
+    for line in response_text.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return f"Continue from your last step: {stripped[:180]}"
+
     # If agent ran commands, likely it's done with a step and needs to continue
     if tools and all(t.get("complete") for t in tools[-3:]):
         return "continue with the next step"
     
     # Generic but contextual
     return "continue"
+
+def summarize_blocker(response_text):
+    for line in response_text.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return f"Agent may need input: {stripped[:180]}"
+    return "Agent is waiting for manual input or confirmation."
 
 def send_http_nudge(message):
     """Send a nudge through the VS Code extension HTTP server."""
