@@ -18,6 +18,8 @@ import os
 import sys
 import time
 import subprocess
+import urllib.error
+import urllib.request
 from pathlib import Path
 from datetime import datetime
 
@@ -25,9 +27,11 @@ from datetime import datetime
 STALL_THRESHOLD = int(os.environ.get("STALL_THRESHOLD", "60"))  # seconds
 CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", "15"))    # seconds
 MAX_NUDGES = int(os.environ.get("MAX_NUDGES", "5"))
+NUDGE_PORTS = [int(p) for p in os.environ.get("NUDGE_PORTS", "19876,19877").split(",") if p.strip()]
 WORKSPACE_STORAGE = Path.home() / "Library/Application Support/Code/User/workspaceStorage"
 LOG_FILE = Path.home() / ".copilot/copilot-supervisor.log"
 STATE_FILE = Path.home() / ".copilot/copilot-supervisor-state.json"
+NUDGE_QUEUE_FILE = Path.home() / ".copilot/nudge-queue.txt"
 
 def log(msg):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -153,7 +157,7 @@ def determine_action(context, stall_duration):
     """Determine what action to take based on the agent's state and context."""
     
     state = context.get("agent_state", "unknown")
-    last_msg = context.get("last_user_message", "")
+    last_msg = context.get("last_user_message") or ""
     tools = context.get("recent_tool_calls", [])
     
     # If agent hit an error
@@ -195,7 +199,7 @@ def determine_action(context, stall_duration):
 
 def generate_nudge_message(context):
     """Generate an intelligent nudge message based on context."""
-    last_msg = context.get("last_user_message", "")
+    last_msg = context.get("last_user_message") or ""
     title = context.get("session_title", "")
     tools = context.get("recent_tool_calls", [])
     
@@ -206,8 +210,46 @@ def generate_nudge_message(context):
     # Generic but contextual
     return "continue"
 
-def send_nudge(message):
+def send_http_nudge(message):
+    """Send a nudge through the VS Code extension HTTP server."""
+    payload = json.dumps({"message": message}).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    last_error = None
+
+    for port in NUDGE_PORTS:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/nudge",
+            data=payload,
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=3) as response:
+                body = response.read().decode("utf-8", errors="replace")
+                log(f"HTTP NUDGE SENT on port {port}: {body[:200]}")
+                return True
+        except (OSError, urllib.error.URLError, urllib.error.HTTPError) as e:
+            last_error = e
+
+    log(f"HTTP NUDGE FAILED: {last_error}")
+    return False
+
+def queue_file_nudge(message):
+    """Queue a nudge for the VS Code extension's file watcher."""
+    NUDGE_QUEUE_FILE.write_text(message, encoding="utf-8")
+    log(f"FILE NUDGE QUEUED: {NUDGE_QUEUE_FILE}")
+
+def is_screen_locked():
+    result = subprocess.run(
+        ["ioreg", "-n", "Root", "-d1", "-w0"],
+        capture_output=True,
+        text=True,
+    )
+    return '"IOConsoleLocked" = Yes' in result.stdout
+
+def send_ui_nudge(message):
     """Send a message to VS Code Copilot chat via Command Palette (layout-independent)."""
+    escaped_message = message.replace("\\", "\\\\").replace('"', '\\"')
     script = f'''
 tell application "Code" to activate
 delay 0.5
@@ -222,14 +264,28 @@ tell application "System Events"
         keystroke return
         delay 0.4
         -- Type message and send
-        keystroke "{message}"
+        keystroke "{escaped_message}"
         delay 0.2
         keystroke return
     end tell
 end tell
 '''
     subprocess.run(["osascript", "-e", script], capture_output=True)
-    log(f"NUDGE SENT: '{message}'")
+    log(f"UI NUDGE SENT: '{message}'")
+
+def send_nudge(message):
+    """Send a nudge using the most reliable available path."""
+    if send_http_nudge(message):
+        return "http"
+
+    queue_file_nudge(message)
+
+    if is_screen_locked():
+        log("Screen is locked; queued file nudge and skipped UI fallback")
+        return "file"
+
+    send_ui_nudge(message)
+    return "ui"
 
 def save_state(state):
     with open(STATE_FILE, "w") as f:
@@ -285,7 +341,7 @@ def monitor():
             action = determine_action(context, stall_duration)
             
             log(f"  Session: {context.get('session_title')}")
-            log(f"  Last user msg: {context.get('last_user_message', 'N/A')[:100]}")
+            log(f"  Last user msg: {(context.get('last_user_message') or 'N/A')[:100]}")
             log(f"  Agent state: {context.get('agent_state')}")
             log(f"  Decision: {action['action']} — {action['reason'][:150]}")
             
@@ -306,6 +362,109 @@ def monitor():
                 log(f"  ⏳ Waiting — tool still running")
                 last_activity_time = time.time()  # Give it more time
 
+def check_once():
+    """Run one monitor check for scheduled automation."""
+    session_file, current_mtime = find_active_session()
+    if not session_file:
+        print(json.dumps({"status": "no_session"}, indent=2))
+        return
+
+    state = load_state()
+    last_mtime = state.get("last_mtime", 0)
+    nudge_count = state.get("nudge_count", 0)
+    age = time.time() - current_mtime
+    context = read_session_context(session_file)
+    action = determine_action(context, int(age))
+
+    result = {
+        "status": "stalled",
+        "session_file": str(session_file),
+        "last_modified_ago_seconds": age,
+        "session_title": context.get("session_title"),
+        "last_user_message": context.get("last_user_message"),
+        "agent_state": context.get("agent_state"),
+        "action": action,
+        "nudge_count": nudge_count,
+    }
+
+    # VS Code can update the session file when it renders Copilot's "Continue?"
+    # gate. Treat that gate as actionable even when the file is still fresh.
+    if context.get("agent_state") == "waiting_confirmation":
+        if action["action"] == "nudge" and action.get("suggestion"):
+            if nudge_count >= MAX_NUDGES:
+                result["status"] = "max_nudges_reached"
+                result["message"] = "Manual intervention required."
+            else:
+                path = send_nudge(action["suggestion"])
+                nudge_count += 1
+                save_state({
+                    "nudge_count": nudge_count,
+                    "last_nudge_time": time.time(),
+                    "last_mtime": current_mtime,
+                })
+                result["status"] = "nudged"
+                result["nudge_path"] = path
+                result["nudge_count"] = nudge_count
+                if nudge_count >= 3:
+                    result["status"] = "repeated_nudges"
+                    result["message"] = "Agent has been nudged repeatedly without confirmed progress."
+            print(json.dumps(result, indent=2))
+            return
+
+        if action["action"] == "approve":
+            result["status"] = "needs_approval"
+            result["message"] = action.get("suggestion") or "Agent is waiting for manual approval."
+            print(json.dumps(result, indent=2))
+            return
+
+    if age < STALL_THRESHOLD and current_mtime > last_mtime:
+        save_state({"nudge_count": 0, "last_nudge_time": 0, "last_mtime": current_mtime})
+        print(json.dumps({
+            "status": "active",
+            "session_file": str(session_file),
+            "last_modified_ago_seconds": age,
+        }, indent=2))
+        return
+
+    if age < STALL_THRESHOLD:
+        print(json.dumps({
+            "status": "recent",
+            "session_file": str(session_file),
+            "last_modified_ago_seconds": age,
+            "nudge_count": nudge_count,
+        }, indent=2))
+        return
+
+    if action["action"] == "nudge" and action.get("suggestion"):
+        if nudge_count >= MAX_NUDGES:
+            result["status"] = "max_nudges_reached"
+            result["message"] = "Manual intervention required."
+        else:
+            path = send_nudge(action["suggestion"])
+            nudge_count += 1
+            save_state({
+                "nudge_count": nudge_count,
+                "last_nudge_time": time.time(),
+                "last_mtime": current_mtime,
+            })
+            result["status"] = "nudged"
+            result["nudge_path"] = path
+            result["nudge_count"] = nudge_count
+            if nudge_count >= 3:
+                result["status"] = "repeated_nudges"
+                result["message"] = "Agent has been nudged repeatedly without confirmed progress."
+    elif action["action"] == "approve":
+        result["status"] = "needs_approval"
+        result["message"] = action.get("suggestion") or "Agent is waiting for manual approval."
+    elif action["action"] == "escalate":
+        result["status"] = "error"
+        result["message"] = action.get("reason") or "Agent requires manual intervention."
+    elif action["action"] == "wait":
+        save_state({"nudge_count": nudge_count, "last_nudge_time": state.get("last_nudge_time", 0), "last_mtime": current_mtime})
+        result["status"] = "wait"
+
+    print(json.dumps(result, indent=2))
+
 def status():
     """Show current status."""
     session_file, mtime = find_active_session()
@@ -320,7 +479,7 @@ def status():
     print(f"📋 Title: {context.get('session_title')}")
     print(f"📊 Requests: {context.get('total_requests')}")
     print(f"⏱️  Last modified: {age:.0f}s ago")
-    print(f"💬 Last user msg: {context.get('last_user_message', 'N/A')[:100]}")
+    print(f"💬 Last user msg: {(context.get('last_user_message') or 'N/A')[:100]}")
     print(f"🔧 Recent tools: {len(context.get('recent_tool_calls', []))}")
     print(f"🔄 Agent state: {context.get('agent_state')}")
     
@@ -385,11 +544,14 @@ if __name__ == "__main__":
             context["file"] = str(session_file)
             context["last_modified_ago_seconds"] = time.time() - mtime
             print(json.dumps(context, indent=2))
+    elif cmd == "once":
+        check_once()
     elif cmd == "help":
         print("""Copilot Smart Supervisor
 
 Usage:
   python3 supervisor.py monitor   — Start monitoring (foreground)
+  python3 supervisor.py once      — Run one scheduled check and nudge if stalled
   python3 supervisor.py status    — Show current session status
   python3 supervisor.py read [N]  — Read last N conversation exchanges
   python3 supervisor.py context   — Dump current session context as JSON
