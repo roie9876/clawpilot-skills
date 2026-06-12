@@ -159,6 +159,8 @@ python3 ~/.copilot/skills/copilot-babysitter/supervisor.py monitor
 | `STALL_THRESHOLD` | 60 | Seconds of no change before acting |
 | `CHECK_INTERVAL` | 15 | Seconds between checks |
 | `MAX_NUDGES` | 5 | Max consecutive nudges before backing off |
+| `IN_PROGRESS_GRACE` | 180 | Seconds to wait when the latest Copilot request still appears in progress |
+| `LONG_RUNNING_GRACE` | 1800 | Seconds to wait when Copilot says a deploy/test/background command is still running |
 | `NUDGE_MESSAGE` | "continue" | Default message (overridden by smart logic) |
 
 ## Clawpilot Automation
@@ -169,6 +171,10 @@ Best used as a Clawpilot automation (every 2 minutes). The automation:
 3. Reads the workspace folder for additional context
 4. Sends an intelligent, contextual  not just "continue"message 
 5. Notifies user via Teams on progress or blockers
+
+When Copilot reports that a deploy, test, or background command is still running,
+the supervisor waits for `LONG_RUNNING_GRACE` before nudging. After that grace
+period it asks Copilot to check progress, not to blindly continue.
 
 ## Logs
 

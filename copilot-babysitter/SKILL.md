@@ -147,6 +147,10 @@ stat -f "%m" "$SESSION_FILE" && date +%s
 3. **Third consecutive stall**: Alert Roie via  "Agent not responding to nudges"Teams 
 4. **After 5 failed nudges**: Stop trying, send Teams alert, wait for manual intervention
 
+If the agent says a deploy, test, or background command is still running, do not
+blindly nudge it. Wait for `LONG_RUNNING_GRACE` (default 30 minutes), then ask it
+to check progress and continue waiting if the operation is still healthy.
+
 **Nudge messages should be  read what the agent was doing and tell it what to do next. Examples:contextual** 
 - "The 99.1% pass rate is acceptable. Continue with lifecycle tests."
 - "Continue with the next  node drain."test 

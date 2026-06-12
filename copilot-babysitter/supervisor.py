@@ -28,6 +28,7 @@ STALL_THRESHOLD = int(os.environ.get("STALL_THRESHOLD", "60"))  # seconds
 CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", "15"))    # seconds
 MAX_NUDGES = int(os.environ.get("MAX_NUDGES", "5"))
 IN_PROGRESS_GRACE = int(os.environ.get("IN_PROGRESS_GRACE", "180"))
+LONG_RUNNING_GRACE = int(os.environ.get("LONG_RUNNING_GRACE", "1800"))
 NUDGE_PORTS = [int(p) for p in os.environ.get("NUDGE_PORTS", "19876,19877").split(",") if p.strip()]
 WORKSPACE_STORAGE = Path.home() / "Library/Application Support/Code/User/workspaceStorage"
 LOG_FILE = Path.home() / ".copilot/copilot-supervisor.log"
@@ -46,6 +47,19 @@ BLOCKER_PHRASES = (
     "can't proceed",
     "cannot proceed",
     "need input",
+)
+LONG_RUNNING_PHRASES = (
+    "background completion notification",
+    "background command",
+    "still running",
+    "deploy is now running",
+    "deployment is still running",
+    "creating the dual-stack cluster",
+    "cluster creation",
+    "progressing normally",
+    "will then add",
+    "minutes more",
+    "min more",
 )
 
 def text_value(value):
@@ -245,6 +259,19 @@ def determine_action(context, stall_duration):
             "action": "approve",
             "reason": "Agent appears to be asking for user input or confirmation.",
             "suggestion": summarize_blocker(response_text),
+        }
+
+    if any(phrase in response_text_lc for phrase in LONG_RUNNING_PHRASES):
+        if stall_duration < LONG_RUNNING_GRACE:
+            return {
+                "action": "wait",
+                "reason": f"Agent is intentionally waiting for a long-running operation inside {LONG_RUNNING_GRACE}s grace window",
+                "suggestion": None,
+            }
+        return {
+            "action": "nudge",
+            "reason": f"Long-running operation has been quiet for {stall_duration}s",
+            "suggestion": "Check the background command or deployment status and report progress. If it is still running normally, say so and continue waiting for completion.",
         }
     
     # Agent seems stalled (no activity for STALL_THRESHOLD)
