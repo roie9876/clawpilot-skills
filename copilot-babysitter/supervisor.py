@@ -60,6 +60,73 @@ def log(msg):
     with open(LOG_FILE, "a") as f:
         f.write(line + "\n")
 
+def ensure_list_size(items, index):
+    while len(items) <= index:
+        items.append({})
+
+def set_nested_value(root, path, value):
+    """Apply a VS Code JSONL path update into a dict/list tree."""
+    current = root
+    for i, part in enumerate(path):
+        is_last = i == len(path) - 1
+        if isinstance(current, list) and isinstance(part, int):
+            ensure_list_size(current, part)
+            if is_last:
+                current[part] = value
+                return
+            if not isinstance(current[part], (dict, list)):
+                current[part] = [] if isinstance(path[i + 1], int) else {}
+            current = current[part]
+            continue
+
+        if isinstance(current, dict):
+            if is_last:
+                current[part] = value
+                return
+            if part not in current or not isinstance(current[part], (dict, list)):
+                current[part] = [] if isinstance(path[i + 1], int) else {}
+            current = current[part]
+            continue
+
+        return
+
+def reconstruct_session_data(session_file: Path):
+    """Read the header plus incremental JSONL updates into current session state."""
+    with open(session_file, "r", encoding="utf-8", errors="replace") as f:
+        first_line = f.readline().strip()
+        if not first_line:
+            return {}
+
+        header = json.loads(first_line)
+        session_data = header.get("v", {})
+        if not isinstance(session_data, dict):
+            return {}
+        session_data.setdefault("requests", [])
+
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            path = obj.get("k")
+            if not isinstance(path, list):
+                continue
+
+            value = obj.get("v")
+            if path == ["requests"] and isinstance(value, list):
+                session_data.setdefault("requests", [])
+                session_data["requests"].extend(
+                    req for req in value if isinstance(req, dict)
+                )
+                continue
+
+            set_nested_value(session_data, path, value)
+
+    return session_data
+
 def find_active_session():
     """Find the most recently modified .jsonl session file across all workspaces."""
     best = None
@@ -87,22 +154,15 @@ def read_session_context(session_file: Path):
         "recent_tool_calls": [],
         "agent_state": "unknown",  # working, stalled, waiting_confirmation, blocked
         "last_response_text": [],
+        "request_in_progress": False,
     }
-    
-    # Read the header (first line) which contains the full session state
-    with open(session_file, "r") as f:
-        first_line = f.readline().strip()
-    
-    if not first_line:
-        return context
-    
+
     try:
-        header = json.loads(first_line)
-        session_data = header.get("v", {})
+        session_data = reconstruct_session_data(session_file)
         context["session_title"] = session_data.get("customTitle", "Untitled")
         requests = session_data.get("requests", [])
         context["total_requests"] = len(requests)
-        
+
         # Find last user message
         for i in range(len(requests) - 1, -1, -1):
             req = requests[i]
@@ -124,7 +184,7 @@ def read_session_context(session_file: Path):
                 kind = item.get("kind", "")
 
                 item_text = text_value(item.get("value"))
-                if item_text:
+                if item_text and kind not in ("thinking", "toolInvocationSerialized"):
                     context["last_response_text"].append(item_text)
                 
                 if kind == "toolInvocationSerialized":
@@ -147,35 +207,10 @@ def read_session_context(session_file: Path):
                 if result.get("errorDetails"):
                     context["agent_state"] = "error"
                     context["error"] = str(result["errorDetails"])[:500]
-    
-    except (json.JSONDecodeError, KeyError, TypeError) as e:
+
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as e:
         log(f"Error parsing session: {e}")
-    
-    # Also read the tail of the file for incremental updates
-    try:
-        result = subprocess.run(
-            ["tail", "-50", str(session_file)],
-            capture_output=True, text=True
-        )
-        for line in result.stdout.strip().split("\n"):
-            if not line.strip():
-                continue
-            try:
-                obj = json.loads(line)
-                k = obj.get("k", [])
-                v = obj.get("v")
-                
-                # Check for tool confirmations needed
-                if isinstance(v, list):
-                    for item in v:
-                        if isinstance(item, dict) and item.get("kind") == "toolInvocationSerialized":
-                            if item.get("isConfirmed") is False:
-                                context["agent_state"] = "waiting_confirmation"
-            except json.JSONDecodeError:
-                continue
-    except Exception:
-        pass
-    
+
     return context
 
 def determine_action(context, stall_duration):
@@ -546,14 +581,11 @@ def read_conversation(n=10):
     if not session_file:
         print("No active session found")
         return
-    
-    with open(session_file, "r") as f:
-        first_line = f.readline().strip()
-    
-    header = json.loads(first_line)
-    requests = header.get("v", {}).get("requests", [])
-    
-    print(f"Session: {header['v'].get('customTitle', 'Untitled')}")
+
+    session_data = reconstruct_session_data(session_file)
+    requests = session_data.get("requests", [])
+
+    print(f"Session: {session_data.get('customTitle', 'Untitled')}")
     print(f"Total exchanges: {len(requests)}")
     print(f"Showing last {min(n, len(requests))}:\n")
     
@@ -570,8 +602,13 @@ def read_conversation(n=10):
             if isinstance(item, dict):
                 if item.get("kind") == "toolInvocationSerialized":
                     tool_count += 1
-                # Other text content could be here
-        
+                    continue
+                text = text_value(item.get("value")).strip()
+                if text and item.get("kind") != "thinking":
+                    text_parts.append(text)
+
+        if text_parts:
+            print(f"🤖 AGENT: {' '.join(text_parts)[:500]}")
         if tool_count:
             print(f"🤖 AGENT: [{tool_count} tool calls]")
         
