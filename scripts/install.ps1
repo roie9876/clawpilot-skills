@@ -109,20 +109,24 @@ $McapsMsxDir = Join-Path $McapsIqDir 'mcp\msx-mcp-server'
 if (Test-Path $CrmToolsDir -PathType Container) {
     if (Test-Path $McapsIqDir -PathType Container) {
         Write-Host "  =  MCAPS-IQ library already present"
-    } elseif (Test-Path "$HOME\MCAPS-IQ\.git") {
+    } elseif (Test-Path "$HOME\MCAPS-IQ") {
         New-Item -ItemType Directory -Force -Path (Join-Path $CrmToolsDir 'lib') | Out-Null
         New-Item -ItemType SymbolicLink -Path $McapsIqDir -Target "$HOME\MCAPS-IQ" -Force | Out-Null
         Write-Host "  +  MCAPS-IQ library linked from ~/MCAPS-IQ"
-    } else {
-        Write-Host "  ... Cloning MCAPS-IQ library for CRM tools..."
+    } elseif ($env:MCAPS_IQ_REPO_URL) {
+        Write-Host "  ... Cloning MCAPS-IQ library for CRM tools from MCAPS_IQ_REPO_URL..."
         New-Item -ItemType Directory -Force -Path (Join-Path $CrmToolsDir 'lib') | Out-Null
         try {
-            git clone --quiet https://github.com/yingding/MCAPS-IQ.git $McapsIqDir 2>$null
+            git clone --quiet $env:MCAPS_IQ_REPO_URL $McapsIqDir 2>$null
             Write-Host "  +  MCAPS-IQ library cloned"
         } catch {
-            Write-Host "  !  Failed to clone MCAPS-IQ. CRM tools won't work until you run:" -ForegroundColor Yellow
-            Write-Host "     git clone https://github.com/yingding/MCAPS-IQ.git $McapsIqDir"
+            Write-Host "  !  Failed to clone MCAPS-IQ from MCAPS_IQ_REPO_URL." -ForegroundColor Yellow
+            Write-Host "     Check access, or place MCAPS-IQ at ~/MCAPS-IQ and rerun this installer."
         }
+    } else {
+        Write-Host "  !  MCAPS-IQ not found. CRM tools won't work until you either:" -ForegroundColor Yellow
+        Write-Host "     1. Place MCAPS-IQ at ~/MCAPS-IQ and rerun this installer, or"
+        Write-Host "     2. Set MCAPS_IQ_REPO_URL to an authorized MCAPS-IQ repo URL and rerun."
     }
 
     if (Test-Path $McapsMsxDir -PathType Container) {

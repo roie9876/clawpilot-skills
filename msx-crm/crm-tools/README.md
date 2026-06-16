@@ -16,13 +16,29 @@ MCAPS-IQ cloning automatically. To do it manually:
 ```bash
 # macOS / Linux
 cd ~/.copilot/skills/msx-crm/crm-tools
-git clone https://github.com/yingding/MCAPS-IQ.git lib/mcaps-iq
+mkdir -p lib
+if [ -d "$HOME/MCAPS-IQ" ]; then
+    ln -sfn "$HOME/MCAPS-IQ" lib/mcaps-iq
+elif [ -n "${MCAPS_IQ_REPO_URL:-}" ]; then
+    git clone "$MCAPS_IQ_REPO_URL" lib/mcaps-iq
+else
+    echo "Place MCAPS-IQ at ~/MCAPS-IQ or set MCAPS_IQ_REPO_URL to an authorized repo URL."
+fi
 cd lib/mcaps-iq/mcp/msx-mcp-server
 esbuild src/auth.ts src/crm.ts src/validation.ts --outdir=dist --format=esm --platform=node --target=node22
+```
 
+```powershell
 # Windows PowerShell
 Set-Location "$HOME\.copilot\skills\msx-crm\crm-tools"
-git clone https://github.com/yingding/MCAPS-IQ.git lib\mcaps-iq
+New-Item -ItemType Directory -Force -Path lib | Out-Null
+if (Test-Path "$HOME\MCAPS-IQ") {
+    New-Item -ItemType SymbolicLink -Path lib\mcaps-iq -Target "$HOME\MCAPS-IQ" -Force | Out-Null
+} elseif ($env:MCAPS_IQ_REPO_URL) {
+    git clone $env:MCAPS_IQ_REPO_URL lib\mcaps-iq
+} else {
+    "Place MCAPS-IQ at ~/MCAPS-IQ or set MCAPS_IQ_REPO_URL to an authorized repo URL."
+}
 Set-Location lib\mcaps-iq\mcp\msx-mcp-server
 esbuild src/auth.ts src/crm.ts src/validation.ts --outdir=dist --format=esm --platform=node --target=node22
 ```

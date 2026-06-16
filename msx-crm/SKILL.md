@@ -142,18 +142,30 @@ The skill installer clones MCAPS-IQ automatically. Verify it exists:
 if (Test-Path "$HOME\.copilot\skills\msx-crm\crm-tools\lib\mcaps-iq\mcp\msx-mcp-server\dist\auth.js") { "✅ MCAPS-IQ MSX modules found" } else { "❌ MCAPS-IQ MSX modules missing" }
 ```
 
-If MCAPS-IQ is missing but `run-tool.mjs` exists, install only that dependency and transpile the MSX modules:
+If MCAPS-IQ is missing but `run-tool.mjs` exists, restore MCAPS-IQ locally or provide an authorized repo URL, then transpile the MSX modules:
 
 ```bash
 mkdir -p "$HOME/.copilot/skills/msx-crm/crm-tools/lib"
-git clone https://github.com/yingding/MCAPS-IQ.git "$HOME/.copilot/skills/msx-crm/crm-tools/lib/mcaps-iq"
+if [ -d "$HOME/MCAPS-IQ" ]; then
+    ln -sfn "$HOME/MCAPS-IQ" "$HOME/.copilot/skills/msx-crm/crm-tools/lib/mcaps-iq"
+elif [ -n "${MCAPS_IQ_REPO_URL:-}" ]; then
+    git clone "$MCAPS_IQ_REPO_URL" "$HOME/.copilot/skills/msx-crm/crm-tools/lib/mcaps-iq"
+else
+    echo "Place MCAPS-IQ at ~/MCAPS-IQ or set MCAPS_IQ_REPO_URL to an authorized repo URL."
+fi
 cd "$HOME/.copilot/skills/msx-crm/crm-tools/lib/mcaps-iq/mcp/msx-mcp-server"
 esbuild src/auth.ts src/crm.ts src/validation.ts --outdir=dist --format=esm --platform=node --target=node22
 ```
 
 ```powershell
 New-Item -ItemType Directory -Force -Path "$HOME\.copilot\skills\msx-crm\crm-tools\lib" | Out-Null
-git clone https://github.com/yingding/MCAPS-IQ.git "$HOME\.copilot\skills\msx-crm\crm-tools\lib\mcaps-iq"
+if (Test-Path "$HOME\MCAPS-IQ") {
+    New-Item -ItemType SymbolicLink -Path "$HOME\.copilot\skills\msx-crm\crm-tools\lib\mcaps-iq" -Target "$HOME\MCAPS-IQ" -Force | Out-Null
+} elseif ($env:MCAPS_IQ_REPO_URL) {
+    git clone $env:MCAPS_IQ_REPO_URL "$HOME\.copilot\skills\msx-crm\crm-tools\lib\mcaps-iq"
+} else {
+    "Place MCAPS-IQ at ~/MCAPS-IQ or set MCAPS_IQ_REPO_URL to an authorized repo URL."
+}
 Set-Location "$HOME\.copilot\skills\msx-crm\crm-tools\lib\mcaps-iq\mcp\msx-mcp-server"
 esbuild src/auth.ts src/crm.ts src/validation.ts --outdir=dist --format=esm --platform=node --target=node22
 ```

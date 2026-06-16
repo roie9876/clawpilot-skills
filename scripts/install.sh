@@ -87,19 +87,23 @@ MCAPS_MSX_DIR="$MCAPS_IQ_DIR/mcp/msx-mcp-server"
 if [ -d "$CRM_TOOLS_DIR" ]; then
     if [ -d "$MCAPS_IQ_DIR" ]; then
         echo "  ✓  MCAPS-IQ library already present"
-    elif [ -d "$HOME/MCAPS-IQ/.git" ]; then
+    elif [ -d "$HOME/MCAPS-IQ" ]; then
         mkdir -p "$CRM_TOOLS_DIR/lib"
         ln -sfn "$HOME/MCAPS-IQ" "$MCAPS_IQ_DIR"
         echo "  ✓  MCAPS-IQ library linked from ~/MCAPS-IQ"
-    else
-        echo "  ⏳ Cloning MCAPS-IQ library for CRM tools..."
+    elif [ -n "${MCAPS_IQ_REPO_URL:-}" ]; then
+        echo "  ⏳ Cloning MCAPS-IQ library for CRM tools from MCAPS_IQ_REPO_URL..."
         mkdir -p "$CRM_TOOLS_DIR/lib"
-        if git clone --quiet https://github.com/yingding/MCAPS-IQ.git "$MCAPS_IQ_DIR" 2>/dev/null; then
+        if git clone --quiet "$MCAPS_IQ_REPO_URL" "$MCAPS_IQ_DIR" 2>/dev/null; then
             echo "  ✓  MCAPS-IQ library cloned"
         else
-            echo "  ⚠  Failed to clone MCAPS-IQ. CRM tools will not work until you run:"
-            echo "     git clone https://github.com/yingding/MCAPS-IQ.git $MCAPS_IQ_DIR"
+            echo "  ⚠  Failed to clone MCAPS-IQ from MCAPS_IQ_REPO_URL."
+            echo "     Check access, or place MCAPS-IQ at ~/MCAPS-IQ and rerun this installer."
         fi
+    else
+        echo "  ⚠  MCAPS-IQ not found. CRM tools will not work until you either:"
+        echo "     1. Place MCAPS-IQ at ~/MCAPS-IQ and rerun this installer, or"
+        echo "     2. Set MCAPS_IQ_REPO_URL to an authorized MCAPS-IQ repo URL and rerun."
     fi
 
     if [ -d "$MCAPS_MSX_DIR" ]; then
