@@ -10,16 +10,21 @@ After running `install.sh` / `install.ps1`, this folder is accessible at:
 
 ## Setup
 
-The install script handles MCAPS-IQ cloning automatically. To do it manually:
+`run-tool.mjs` depends on MCAPS-IQ at `lib/mcaps-iq`. The install script handles
+MCAPS-IQ cloning automatically. To do it manually:
 
 ```bash
 # macOS / Linux
 cd ~/.copilot/skills/msx-crm/crm-tools
 git clone https://github.com/yingding/MCAPS-IQ.git lib/mcaps-iq
+cd lib/mcaps-iq/mcp/msx-mcp-server
+esbuild src/auth.ts src/crm.ts src/validation.ts --outdir=dist --format=esm --platform=node --target=node22
 
 # Windows PowerShell
 Set-Location "$HOME\.copilot\skills\msx-crm\crm-tools"
 git clone https://github.com/yingding/MCAPS-IQ.git lib\mcaps-iq
+Set-Location lib\mcaps-iq\mcp\msx-mcp-server
+esbuild src/auth.ts src/crm.ts src/validation.ts --outdir=dist --format=esm --platform=node --target=node22
 ```
 
 ## Verify

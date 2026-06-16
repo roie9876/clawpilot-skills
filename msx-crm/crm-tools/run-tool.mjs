@@ -4,8 +4,9 @@
 // Example: node crm/run-tool.mjs get_milestones '{"customerKeyword":"Aidoc"}'
 //
 // SETUP: This tool depends on the MCAPS-IQ library for CRM auth and client.
-//   Option A (symlink): ln -s ~/Documents/GitHub/MCAPS-IQ lib/mcaps-iq
+//   Option A (symlink): ln -s ~/MCAPS-IQ lib/mcaps-iq
 //   Option B (clone):   git clone <MCAPS-IQ-repo> lib/mcaps-iq
+//   Build/transpile the MSX server modules so lib/mcaps-iq/mcp/msx-mcp-server/dist/*.js exists.
 //   The lib/ directory is .gitignored.
 
 // Use isolated Azure CLI config to avoid conflicts with VS Code's az sessions
@@ -14,11 +15,11 @@ if (!process.env.AZURE_CONFIG_DIR) {
   process.env.AZURE_CONFIG_DIR = `${homedir()}/.azure-msft`;
 }
 
-import { createAuthService } from './lib/mcaps-iq/mcp/msx/src/auth.js';
-import { createCrmClient } from './lib/mcaps-iq/mcp/msx/src/crm.js';
+import { createAuthService } from './lib/mcaps-iq/mcp/msx-mcp-server/dist/auth.js';
+import { createCrmClient } from './lib/mcaps-iq/mcp/msx-mcp-server/dist/crm.js';
 // ALLOWED_ENTITY_SETS not used; CRM_QUERY_MAX_RECORDS inlined
 const CRM_QUERY_MAX_RECORDS = 500;
-import { isValidGuid, normalizeGuid, isValidTpid, sanitizeODataString } from './lib/mcaps-iq/mcp/msx/src/validation.js';
+import { isValidGuid, normalizeGuid, isValidTpid, sanitizeODataString } from './lib/mcaps-iq/mcp/msx-mcp-server/dist/validation.js';
 
 const CRM_URL = 'https://microsoftsales.crm.dynamics.com';
 const TENANT_ID = '72f988bf-86f1-41af-91ab-2d7cd011db47';

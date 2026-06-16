@@ -90,6 +90,7 @@ Install any missing tools before proceeding. After installing Node.js, verify: `
 ### CRM Tool Script (`run-tool.mjs`)
 
 The CRM helper script must exist at `$HOME/.copilot/skills/msx-crm/crm-tools/run-tool.mjs`.
+It is bundled with this skill; do **not** clone a separate `crm-tools` repo.
 
 ```bash
 # macOS / Linux
@@ -101,16 +102,53 @@ The CRM helper script must exist at `$HOME/.copilot/skills/msx-crm/crm-tools/run
 if (Test-Path "$HOME\.copilot\skills\msx-crm\crm-tools\run-tool.mjs") { "✅ CRM tools found" } else { "❌ CRM tools missing" }
 ```
 
-If missing, clone the SE Kanban Tracker repo:
+If missing, reinstall the skills repository so the bundled `crm-tools` folder is linked:
 
 ```bash
-git clone https://github.com/roie9876/crm-tools.git "$HOME/.copilot/skills/msx-crm/crm-tools"
-cd "$HOME/.copilot/skills/msx-crm/crm-tools"
+[ -d "$HOME/customer-skills/.git" ] || git clone https://github.com/roie9876/clawpilot-skills.git "$HOME/customer-skills"
+bash "$HOME/customer-skills/scripts/install.sh"
 ```
 
 ```powershell
-git clone https://github.com/roie9876/crm-tools.git "$HOME\.copilot\skills\msx-crm\crm-tools"
-Set-Location "$HOME\.copilot\skills\msx-crm\crm-tools"; npm install
+if (-not (Test-Path "$HOME\customer-skills\.git")) {
+    git clone https://github.com/roie9876/clawpilot-skills.git "$HOME\customer-skills"
+}
+pwsh "$HOME\customer-skills\scripts\install.ps1"
+```
+
+### MCAPS-IQ Library
+
+`run-tool.mjs` imports the MSX auth/client code from the MCAPS-IQ library at:
+
+| OS | Required path |
+|----|---------------|
+| macOS / Linux | `$HOME/.copilot/skills/msx-crm/crm-tools/lib/mcaps-iq/mcp/msx-mcp-server/dist` |
+| Windows | `$HOME\.copilot\skills\msx-crm\crm-tools\lib\mcaps-iq\mcp\msx-mcp-server\dist` |
+
+The skill installer clones MCAPS-IQ automatically. Verify it exists:
+
+```bash
+[ -f "$HOME/.copilot/skills/msx-crm/crm-tools/lib/mcaps-iq/mcp/msx-mcp-server/dist/auth.js" ] && echo "✅ MCAPS-IQ MSX modules found" || echo "❌ MCAPS-IQ MSX modules missing"
+```
+
+```powershell
+if (Test-Path "$HOME\.copilot\skills\msx-crm\crm-tools\lib\mcaps-iq\mcp\msx-mcp-server\dist\auth.js") { "✅ MCAPS-IQ MSX modules found" } else { "❌ MCAPS-IQ MSX modules missing" }
+```
+
+If MCAPS-IQ is missing but `run-tool.mjs` exists, install only that dependency and transpile the MSX modules:
+
+```bash
+mkdir -p "$HOME/.copilot/skills/msx-crm/crm-tools/lib"
+git clone https://github.com/yingding/MCAPS-IQ.git "$HOME/.copilot/skills/msx-crm/crm-tools/lib/mcaps-iq"
+cd "$HOME/.copilot/skills/msx-crm/crm-tools/lib/mcaps-iq/mcp/msx-mcp-server"
+esbuild src/auth.ts src/crm.ts src/validation.ts --outdir=dist --format=esm --platform=node --target=node22
+```
+
+```powershell
+New-Item -ItemType Directory -Force -Path "$HOME\.copilot\skills\msx-crm\crm-tools\lib" | Out-Null
+git clone https://github.com/yingding/MCAPS-IQ.git "$HOME\.copilot\skills\msx-crm\crm-tools\lib\mcaps-iq"
+Set-Location "$HOME\.copilot\skills\msx-crm\crm-tools\lib\mcaps-iq\mcp\msx-mcp-server"
+esbuild src/auth.ts src/crm.ts src/validation.ts --outdir=dist --format=esm --platform=node --target=node22
 ```
 
 ### VPN Connection

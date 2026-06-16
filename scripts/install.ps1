@@ -101,13 +101,18 @@ if ($failed -gt 0) {
     exit 1
 }
 
-# --- CRM Tools: clone MCAPS-IQ dependency ---
+# --- CRM Tools: clone/link and transpile MCAPS-IQ dependency ---
 $CrmToolsDir = Join-Path $TargetDir 'msx-crm\crm-tools'
 $McapsIqDir = Join-Path $CrmToolsDir 'lib\mcaps-iq'
+$McapsMsxDir = Join-Path $McapsIqDir 'mcp\msx-mcp-server'
 
 if (Test-Path $CrmToolsDir -PathType Container) {
     if (Test-Path $McapsIqDir -PathType Container) {
         Write-Host "  =  MCAPS-IQ library already present"
+    } elseif (Test-Path "$HOME\MCAPS-IQ\.git") {
+        New-Item -ItemType Directory -Force -Path (Join-Path $CrmToolsDir 'lib') | Out-Null
+        New-Item -ItemType SymbolicLink -Path $McapsIqDir -Target "$HOME\MCAPS-IQ" -Force | Out-Null
+        Write-Host "  +  MCAPS-IQ library linked from ~/MCAPS-IQ"
     } else {
         Write-Host "  ... Cloning MCAPS-IQ library for CRM tools..."
         New-Item -ItemType Directory -Force -Path (Join-Path $CrmToolsDir 'lib') | Out-Null
@@ -117,6 +122,35 @@ if (Test-Path $CrmToolsDir -PathType Container) {
         } catch {
             Write-Host "  !  Failed to clone MCAPS-IQ. CRM tools won't work until you run:" -ForegroundColor Yellow
             Write-Host "     git clone https://github.com/yingding/MCAPS-IQ.git $McapsIqDir"
+        }
+    }
+
+    if (Test-Path $McapsMsxDir -PathType Container) {
+        $AuthJs = Join-Path $McapsMsxDir 'dist\auth.js'
+        $CrmJs = Join-Path $McapsMsxDir 'dist\crm.js'
+        $ValidationJs = Join-Path $McapsMsxDir 'dist\validation.js'
+        if ((Test-Path $AuthJs) -and (Test-Path $CrmJs) -and (Test-Path $ValidationJs)) {
+            Write-Host "  =  MCAPS-IQ MSX modules already built"
+        } else {
+            $Esbuild = Get-Command esbuild -ErrorAction SilentlyContinue
+            $LocalEsbuild = Join-Path $McapsIqDir 'node_modules\.bin\esbuild.cmd'
+            if ($Esbuild) {
+                Write-Host "  ... Transpiling MCAPS-IQ MSX modules..."
+                Push-Location $McapsMsxDir
+                esbuild src/auth.ts src/crm.ts src/validation.ts --outdir=dist --format=esm --platform=node --target=node22 | Out-Null
+                Pop-Location
+                Write-Host "  +  MCAPS-IQ MSX modules transpiled"
+            } elseif (Test-Path $LocalEsbuild) {
+                Write-Host "  ... Transpiling MCAPS-IQ MSX modules..."
+                Push-Location $McapsMsxDir
+                & $LocalEsbuild src/auth.ts src/crm.ts src/validation.ts --outdir=dist --format=esm --platform=node --target=node22 | Out-Null
+                Pop-Location
+                Write-Host "  +  MCAPS-IQ MSX modules transpiled"
+            } else {
+                Write-Host "  !  MCAPS-IQ found, but MSX modules are not built." -ForegroundColor Yellow
+                Write-Host "     Install esbuild or build MCAPS-IQ, then run:"
+                Write-Host "     cd $McapsMsxDir; esbuild src/auth.ts src/crm.ts src/validation.ts --outdir=dist --format=esm --platform=node --target=node22"
+            }
         }
     }
 }

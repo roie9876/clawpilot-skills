@@ -79,13 +79,18 @@ echo ""
 echo "Done: $installed installed, $updated updated, $skipped skipped"
 echo ""
 
-# --- CRM Tools: clone MCAPS-IQ dependency ---
+# --- CRM Tools: clone/link and transpile MCAPS-IQ dependency ---
 CRM_TOOLS_DIR="$TARGET_DIR/msx-crm/crm-tools"
 MCAPS_IQ_DIR="$CRM_TOOLS_DIR/lib/mcaps-iq"
+MCAPS_MSX_DIR="$MCAPS_IQ_DIR/mcp/msx-mcp-server"
 
 if [ -d "$CRM_TOOLS_DIR" ]; then
     if [ -d "$MCAPS_IQ_DIR" ]; then
         echo "  ✓  MCAPS-IQ library already present"
+    elif [ -d "$HOME/MCAPS-IQ/.git" ]; then
+        mkdir -p "$CRM_TOOLS_DIR/lib"
+        ln -sfn "$HOME/MCAPS-IQ" "$MCAPS_IQ_DIR"
+        echo "  ✓  MCAPS-IQ library linked from ~/MCAPS-IQ"
     else
         echo "  ⏳ Cloning MCAPS-IQ library for CRM tools..."
         mkdir -p "$CRM_TOOLS_DIR/lib"
@@ -94,6 +99,24 @@ if [ -d "$CRM_TOOLS_DIR" ]; then
         else
             echo "  ⚠  Failed to clone MCAPS-IQ. CRM tools will not work until you run:"
             echo "     git clone https://github.com/yingding/MCAPS-IQ.git $MCAPS_IQ_DIR"
+        fi
+    fi
+
+    if [ -d "$MCAPS_MSX_DIR" ]; then
+        if [ -f "$MCAPS_MSX_DIR/dist/auth.js" ] && [ -f "$MCAPS_MSX_DIR/dist/crm.js" ] && [ -f "$MCAPS_MSX_DIR/dist/validation.js" ]; then
+            echo "  ✓  MCAPS-IQ MSX modules already built"
+        elif command -v esbuild >/dev/null 2>&1; then
+            echo "  ⏳ Transpiling MCAPS-IQ MSX modules..."
+            (cd "$MCAPS_MSX_DIR" && mkdir -p dist && esbuild src/auth.ts src/crm.ts src/validation.ts --outdir=dist --format=esm --platform=node --target=node22 >/dev/null)
+            echo "  ✓  MCAPS-IQ MSX modules transpiled"
+        elif [ -x "$MCAPS_IQ_DIR/node_modules/.bin/esbuild" ]; then
+            echo "  ⏳ Transpiling MCAPS-IQ MSX modules..."
+            (cd "$MCAPS_MSX_DIR" && mkdir -p dist && "$MCAPS_IQ_DIR/node_modules/.bin/esbuild" src/auth.ts src/crm.ts src/validation.ts --outdir=dist --format=esm --platform=node --target=node22 >/dev/null)
+            echo "  ✓  MCAPS-IQ MSX modules transpiled"
+        else
+            echo "  ⚠  MCAPS-IQ found, but MSX modules are not built."
+            echo "     Install esbuild or build MCAPS-IQ, then run:"
+            echo "     cd $MCAPS_MSX_DIR && esbuild src/auth.ts src/crm.ts src/validation.ts --outdir=dist --format=esm --platform=node --target=node22"
         fi
     fi
 fi
