@@ -86,6 +86,13 @@ if (Test-Path "$HOME\.copilot\skills\customer-repo\SKILL.md") { "✅ installed" 
 | Azure CLI | `az version` | `az version` | `brew install azure-cli` | `winget install Microsoft.AzureCLI` |
 
 Install any missing tools before proceeding. After installing Node.js, verify: `node --version`.
+If `node` is not on `PATH` after Homebrew installation, use the Homebrew binary directly:
+
+```bash
+NODE_BIN="$(command -v node || true)"
+[ -n "$NODE_BIN" ] || NODE_BIN="$HOME/.homebrew/bin/node"
+"$NODE_BIN" --version
+```
 
 ### CRM Tool Script (`run-tool.mjs`)
 
@@ -185,7 +192,9 @@ After all prerequisites are satisfied:
 
 ```bash
 # macOS / Linux
-node "$HOME/.copilot/skills/msx-crm/crm-tools/run-tool.mjs" <tool-name> '<json-params>'
+NODE_BIN="$(command -v node || true)"
+[ -n "$NODE_BIN" ] || NODE_BIN="$HOME/.homebrew/bin/node"
+"$NODE_BIN" "$HOME/.copilot/skills/msx-crm/crm-tools/run-tool.mjs" <tool-name> '<json-params>'
 ```
 
 ```powershell
