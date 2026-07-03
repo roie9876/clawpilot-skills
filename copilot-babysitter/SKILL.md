@@ -4,7 +4,34 @@
 Monitor the VS Code GitHub Copilot Agent and automatically nudge it to continue
 when it stalls, stops reporting progress, or waits unnecessarily for user input.
 
-**Key capability**: Works through macOS screen  no need to keep the screen unlocked.lock 
+**Key capability**: Works through macOS screen lock — no need to keep the screen unlocked.
+
+## Design philosophy: semantic judgment, not fixed states
+
+Copilot going **silent is not one state** — it can mean very different things, and each
+needs the opposite response:
+
+| Why Copilot is silent | Correct response |
+|---|---|
+| **Done** — finished the mission, nothing left to do | Stay silent |
+| **Truly working** — a real background process is running; it will report | Stay silent |
+| **Stuck** — abandoned a monitoring loop, forgot to continue, hit a transient error, or "promised to ping" but can't self-resume | **Nudge to continue** |
+| **Needs a human** — asking the user for approval / confirmation / manual action | **Notify Roie** |
+
+Older versions used rigid keyword/state rules (`ONLY_MESSAGE_ON_USER_INPUT`, `wait`,
+etc.) that lumped *done / working / stuck* all under "idle" and stayed silent for all of
+them — so a Copilot that falsely believed it was "monitoring a deploy" (but had actually
+done nothing for hours) slipped through unnoticed.
+
+The current design instead hands the **raw conversation** to the LLM automation, which
+**reads it and reasons about *why* Copilot went quiet**. The `supervisor.py` script is a
+dumb sensor + actuator; the LLM is the brain:
+
+- `supervisor.py context` → emits a rich LLM-ready snapshot (no decision made).
+- `supervisor.py nudge "<msg>"` → sends an LLM-authored, context-specific message.
+
+The deterministic `once` / `monitor` paths still exist for backward compatibility, but the
+recommended flow is the semantic one below.
 
 ## Setup (One-Time)
 
@@ -140,42 +167,60 @@ stat -f "%m" "$SESSION_FILE" && date +%s
  stalled
 ```
 
-## Auto-Nudge Policy
+## Auto-Nudge Policy (semantic)
 
-1. **First stall detection**: Read context, send contextual nudge
-2. **Second consecutive stall** (nudge didn't work): Try again with different message
-3. **Third consecutive stall**: Alert Roie via  "Agent not responding to nudges"Teams 
-4. **After 5 failed nudges**: Stop trying, send Teams alert, wait for manual intervention
+The LLM automation reasons over `supervisor.py context` and acts only when needed:
 
-If the agent says a deploy, test, or background command is still running, do not
-blindly nudge it. Wait for `LONG_RUNNING_GRACE` (default 30 minutes), then ask it
-to check progress and continue waiting if the operation is still healthy.
+1. **Working / Done** → do nothing (stay silent).
+2. **Stuck** → send ONE tailored nudge via `supervisor.py nudge "<msg>"`. The command
+   enforces `MAX_NUDGES` (default 5) consecutive nudges and records state.
+3. **Already nudged, no reaction yet** (`nudged_since_last_activity: true`) → wait one
+   cycle; do not double-nudge.
+4. **Nudge counter auto-resets** the moment Copilot writes to the session after a nudge
+   (it reacted), so a fresh stall later starts from zero.
+5. **After `MAX_NUDGES` with no progress** → back off and alert Roie via Teams.
+6. **Needs a human** (approval / manual action) → do NOT nudge; notify Roie via Teams.
 
-**Nudge messages should be  read what the agent was doing and tell it what to do next. Examples:contextual** 
-- "The 99.1% pass rate is acceptable. Continue with lifecycle tests."
-- "Continue with the next  node drain."test 
-- "Yes, proceed with that approach."
+**Detecting a false "still working" claim** — treat as *stuck* when Copilot says things like
+"I'll ping you when it clears", "I'll report at the next milestone", or "still building",
+but has been idle a long time (background agents CANNOT self-resume — once the turn ends
+Copilot waits forever), or it repeats the same "same phase as last check" status across
+turns with no new tool activity. When in doubt between *working* and *stuck*, treat as stuck.
 
-Do NOT just send " the agent responds better to specific instructions.continue" 
+**Nudge messages must be contextual** — read what the agent was doing and tell it exactly
+what to do next. For an abandoned background/deploy watch: instruct it to re-check NOW
+(tail the log, grep for errors, `pgrep` the process, verify real state directly via
+`az`/`kubectl`), decide whether the job finished/failed/stalled, then proceed or fix.
+Do NOT just send "continue".
 
 ## Teams Status Updates
 
-Send Roie a brief status update every 3rd run (~6 minutes):
-- 1-2 lines max
-- What the agent is currently doing
-- Any issues detected
+Only message Roie for genuine human-in-the-loop blockers or after max-nudge back-off —
+keep it to 1-2 lines with the session title and the exact thing Copilot is waiting for.
+Do not send routine "still working" status pings.
 
 ## Helper Tools
 
-### supervisor.py (status/read)
+### supervisor.py commands
 ```bash
+# Rich LLM-ready snapshot (idle time, mission, last response, tool states,
+# nudge bookkeeping). Makes NO decision — the LLM reasons over this.
+python3 ~/.copilot/skills/copilot-babysitter/supervisor.py context
+
+# Send an LLM-authored message to Copilot chat (respects MAX_NUDGES; --force overrides).
+python3 ~/.copilot/skills/copilot-babysitter/supervisor.py nudge "your tailored message"
+
+# Clear the consecutive-nudge counter (e.g. after the user intervenes manually).
+python3 ~/.copilot/skills/copilot-babysitter/supervisor.py reset
+
+# Legacy/diagnostic:
 python3 ~/.copilot/skills/copilot-babysitter/supervisor.py status
 python3 ~/.copilot/skills/copilot-babysitter/supervisor.py read 3
+python3 ~/.copilot/skills/copilot-babysitter/supervisor.py once     # deterministic one-shot
 ```
 
-**Known issues**:
-- Can crash on NoneType (line 323) if context  handle gracefullyempty 
-- The session file may be very  use the header for quick readslarge 
+The `context` snapshot includes `nudged_since_last_activity` and `nudge_count` so the LLM
+can avoid double-nudging and knows when to back off.
 
 ## Requirements
 

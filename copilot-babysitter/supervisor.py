@@ -29,6 +29,7 @@ CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", "15"))    # seconds
 MAX_NUDGES = int(os.environ.get("MAX_NUDGES", "5"))
 IN_PROGRESS_GRACE = int(os.environ.get("IN_PROGRESS_GRACE", "180"))
 LONG_RUNNING_GRACE = int(os.environ.get("LONG_RUNNING_GRACE", "1800"))
+ONLY_MESSAGE_ON_USER_INPUT = os.environ.get("ONLY_MESSAGE_ON_USER_INPUT", "1") != "0"
 NUDGE_PORTS = [int(p) for p in os.environ.get("NUDGE_PORTS", "19876,19877").split(",") if p.strip()]
 WORKSPACE_STORAGE = Path.home() / "Library/Application Support/Code/User/workspaceStorage"
 LOG_FILE = Path.home() / ".copilot/copilot-supervisor.log"
@@ -60,6 +61,40 @@ LONG_RUNNING_PHRASES = (
     "will then add",
     "minutes more",
     "min more",
+)
+RETRYABLE_ERROR_PHRASES = (
+    "network error",
+    "connection error",
+    "connection failed",
+    "failed to connect",
+    "could not connect",
+    "connection reset",
+    "connection timed out",
+    "timeout",
+    "timed out",
+    "rate limit",
+    "rate-limit",
+    "rate limited",
+    "too many requests",
+    "quota exceeded",
+    "request failed",
+    "try again",
+    "retry",
+    "model provider",
+    "model_provider",
+    "provider error",
+    "server error",
+    "service unavailable",
+    "temporarily unavailable",
+    "internal server error",
+    "bad gateway",
+    "gateway timeout",
+    "429",
+    "502",
+    "503",
+    "504",
+    "failed to send request",
+    "failed to get response",
 )
 
 def text_value(value):
@@ -235,9 +270,17 @@ def determine_action(context, stall_duration):
     tools = context.get("recent_tool_calls", [])
     response_text = "\n".join(context.get("last_response_text", []))
     response_text_lc = response_text.lower()
+    error_text_lc = str(context.get("error", "")).lower()
+    retryable_text_lc = f"{response_text_lc}\n{error_text_lc}"
     
     # If agent hit an error
     if state == "error":
+        if any(phrase in retryable_text_lc for phrase in RETRYABLE_ERROR_PHRASES):
+            return {
+                "action": "nudge",
+                "reason": "Agent hit a retryable network/rate-limit/model-provider error.",
+                "suggestion": "Retry the failed step now. If the same network, rate-limit, or model-provider error repeats, wait briefly and retry once before asking for help.",
+            }
         return {
             "action": "escalate",
             "reason": f"Agent hit an error: {context.get('error', 'unknown')[:200]}",
@@ -261,11 +304,24 @@ def determine_action(context, stall_duration):
             "suggestion": summarize_blocker(response_text),
         }
 
+    if any(phrase in retryable_text_lc for phrase in RETRYABLE_ERROR_PHRASES):
+        return {
+            "action": "nudge",
+            "reason": "Agent appears stopped on a retryable network/rate-limit/model-provider error.",
+            "suggestion": "Retry the failed step now. If the same network, rate-limit, or model-provider error repeats, wait briefly and retry once before asking for help.",
+        }
+
     if any(phrase in response_text_lc for phrase in LONG_RUNNING_PHRASES):
         if stall_duration < LONG_RUNNING_GRACE:
             return {
                 "action": "wait",
                 "reason": f"Agent is intentionally waiting for a long-running operation inside {LONG_RUNNING_GRACE}s grace window",
+                "suggestion": None,
+            }
+        if ONLY_MESSAGE_ON_USER_INPUT:
+            return {
+                "action": "wait",
+                "reason": f"Long-running operation has been quiet for {stall_duration}s; user-input-only policy suppresses nudges",
                 "suggestion": None,
             }
         return {
@@ -289,6 +345,13 @@ def determine_action(context, stall_duration):
         return {
             "action": "wait",
             "reason": f"Latest Copilot request still appears in progress inside {IN_PROGRESS_GRACE}s grace window",
+            "suggestion": None,
+        }
+
+    if ONLY_MESSAGE_ON_USER_INPUT:
+        return {
+            "action": "wait",
+            "reason": f"Agent has been quiet for {stall_duration}s; user-input-only policy suppresses nudges unless Copilot asks for input",
             "suggestion": None,
         }
     
@@ -644,6 +707,133 @@ def read_conversation(n=10):
             pass  # skip internal
         print("---")
 
+def recent_exchanges(session_data, n=6):
+    """Return the last N user/agent exchanges so an LLM can reconstruct the mission."""
+    requests = session_data.get("requests", [])
+    out = []
+    for req in requests[-n:]:
+        msg = req.get("message", {})
+        user_text = msg.get("text") if isinstance(msg, dict) else None
+
+        resp = req.get("response", [])
+        text_parts = []
+        tool_msgs = []
+        for item in resp:
+            if not isinstance(item, dict):
+                continue
+            kind = item.get("kind", "")
+            if kind == "toolInvocationSerialized":
+                inv = text_value(item.get("invocationMessage", {})).strip()
+                if inv:
+                    tool_msgs.append({
+                        "message": inv[:160],
+                        "complete": item.get("isComplete", False),
+                        "needs_confirmation": item.get("isConfirmed") is False,
+                    })
+                continue
+            t = text_value(item.get("value")).strip()
+            if t and kind != "thinking":
+                text_parts.append(t)
+
+        out.append({
+            "user": (user_text or "")[:800],
+            "agent_text": " ".join(text_parts)[:1600],
+            "tool_calls": tool_msgs[-8:],
+            "in_progress": req.get("result") is None,
+        })
+    return out
+
+def build_llm_context():
+    """Emit a rich, LLM-ready snapshot of the active Copilot session.
+
+    This command makes NO decision about whether to nudge. It hands the raw
+    conversational context to the caller (the LLM automation), which reasons
+    semantically about whether Copilot is done, genuinely working, or stuck.
+    """
+    session_file, mtime = find_active_session()
+    if not session_file:
+        print(json.dumps({"status": "no_session"}, indent=2))
+        return
+
+    session_data = reconstruct_session_data(session_file)
+    context = read_session_context(session_file)
+    state = load_state()
+
+    age = time.time() - mtime
+    last_nudge = state.get("last_nudge_time", 0)
+    recorded_mtime = state.get("last_mtime", 0)
+    nudge_count = state.get("nudge_count", 0)
+
+    # If Copilot has written to the session AFTER our last nudge, it reacted —
+    # reset the consecutive-nudge counter so the LLM starts fresh.
+    if last_nudge and mtime > last_nudge + 2 and nudge_count > 0:
+        nudge_count = 0
+        save_state({"nudge_count": 0, "last_nudge_time": last_nudge, "last_mtime": mtime})
+    elif mtime > recorded_mtime:
+        save_state({"nudge_count": nudge_count, "last_nudge_time": last_nudge, "last_mtime": mtime})
+
+    snapshot = {
+        "status": "ok",
+        "session_file": str(session_file),
+        "session_title": context.get("session_title"),
+        "idle_seconds": int(age),
+        "idle_minutes": round(age / 60, 1),
+        "request_in_progress": context.get("request_in_progress"),
+        "agent_state": context.get("agent_state"),
+        "error": context.get("error"),
+        "last_user_message": context.get("last_user_message"),
+        "last_agent_response": "\n".join(context.get("last_response_text", [])),
+        "recent_tool_calls": context.get("recent_tool_calls", [])[-8:],
+        "recent_exchanges": recent_exchanges(session_data, 6),
+        "nudge_count": nudge_count,
+        "max_nudges": MAX_NUDGES,
+        "last_nudge_seconds_ago": int(time.time() - last_nudge) if last_nudge else None,
+        # True when we already nudged and Copilot has NOT written anything since —
+        # the LLM should wait for a reaction rather than nudging again.
+        "nudged_since_last_activity": bool(last_nudge and last_nudge >= mtime),
+    }
+    print(json.dumps(snapshot, indent=2))
+
+def do_nudge(message, force=False):
+    """Send an LLM-authored message to the active Copilot chat and record state."""
+    message = (message or "").strip()
+    if not message:
+        print(json.dumps({"status": "error", "message": "empty nudge message"}, indent=2))
+        return
+
+    session_file, current_mtime = find_active_session()
+    state = load_state()
+    nudge_count = state.get("nudge_count", 0)
+
+    if not force and nudge_count >= MAX_NUDGES:
+        print(json.dumps({
+            "status": "max_nudges_reached",
+            "nudge_count": nudge_count,
+            "message": f"Already sent {nudge_count} consecutive nudges (max {MAX_NUDGES}). "
+                       "Not sending. Notify the user or run 'reset', or pass --force.",
+        }, indent=2))
+        return
+
+    path = send_nudge(message)
+    nudge_count += 1
+    save_state({
+        "nudge_count": nudge_count,
+        "last_nudge_time": time.time(),
+        "last_mtime": current_mtime if current_mtime else state.get("last_mtime", 0),
+    })
+    print(json.dumps({
+        "status": "nudged",
+        "nudge_path": path,
+        "nudge_count": nudge_count,
+        "message_sent": message,
+    }, indent=2))
+
+def reset_nudges():
+    """Clear the consecutive-nudge counter (e.g. after the user intervenes)."""
+    _, current_mtime = find_active_session()
+    save_state({"nudge_count": 0, "last_nudge_time": 0, "last_mtime": current_mtime or 0})
+    print(json.dumps({"status": "reset", "nudge_count": 0}, indent=2))
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "help"
     
@@ -655,30 +845,44 @@ if __name__ == "__main__":
         n = int(sys.argv[2]) if len(sys.argv) > 2 else 10
         read_conversation(n)
     elif cmd == "context":
-        # Dump full context for the current session (used by Clawpilot)
-        session_file, mtime = find_active_session()
-        if session_file:
-            context = read_session_context(session_file)
-            context["file"] = str(session_file)
-            context["last_modified_ago_seconds"] = time.time() - mtime
-            print(json.dumps(context, indent=2))
+        # Dump a rich, LLM-ready snapshot. Makes NO nudge decision itself —
+        # the LLM automation reasons over this and calls 'nudge' if warranted.
+        build_llm_context()
+    elif cmd == "nudge":
+        # Send an LLM-authored message to Copilot: supervisor.py nudge "message"
+        # or pipe the message on stdin. Pass --force to bypass MAX_NUDGES.
+        force = "--force" in sys.argv[2:]
+        parts = [a for a in sys.argv[2:] if a != "--force"]
+        msg = " ".join(parts).strip()
+        if not msg and not sys.stdin.isatty():
+            msg = sys.stdin.read().strip()
+        do_nudge(msg, force=force)
+    elif cmd == "reset":
+        reset_nudges()
     elif cmd == "once":
         check_once()
     elif cmd == "help":
         print("""Copilot Smart Supervisor
 
 Usage:
-  python3 supervisor.py monitor   — Start monitoring (foreground)
-  python3 supervisor.py once      — Run one scheduled check and nudge if stalled
-  python3 supervisor.py status    — Show current session status
-  python3 supervisor.py read [N]  — Read last N conversation exchanges
-  python3 supervisor.py context   — Dump current session context as JSON
-  python3 supervisor.py help      — Show this help
+  python3 supervisor.py monitor      — Start monitoring (foreground, deterministic)
+  python3 supervisor.py once         — One deterministic check + auto-nudge if stalled
+  python3 supervisor.py context      — Dump rich LLM-ready session snapshot (no decision)
+  python3 supervisor.py nudge "msg"  — Send an LLM-authored message to Copilot chat
+  python3 supervisor.py reset        — Clear the consecutive-nudge counter
+  python3 supervisor.py status       — Show current session status
+  python3 supervisor.py read [N]     — Read last N conversation exchanges
+  python3 supervisor.py help         — Show this help
+
+Recommended (semantic) flow for LLM automations:
+  1. Call 'context' to get the snapshot.
+  2. Reason: is Copilot done, genuinely working, or stuck?
+  3. If stuck (and not nudged_since_last_activity), call 'nudge \"<tailored message>\"'.
 
 Environment:
   STALL_THRESHOLD=60   Seconds before considering agent stalled
   CHECK_INTERVAL=15    Seconds between checks
-  MAX_NUDGES=5         Max nudges before backing off
+  MAX_NUDGES=5         Max consecutive nudges before backing off
 """)
     else:
         print(f"Unknown command: {cmd}")
