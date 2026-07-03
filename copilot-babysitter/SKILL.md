@@ -16,7 +16,18 @@ needs the opposite response:
 | **Done** — finished the mission, nothing left to do | Stay silent |
 | **Truly working** — a real background process is running; it will report | Stay silent |
 | **Stuck** — abandoned a monitoring loop, forgot to continue, hit a transient error, or "promised to ping" but can't self-resume | **Nudge to continue** |
-| **Needs a human** — asking the user for approval / confirmation / manual action | **Notify Roie** |
+| **Asking a routine question** — "shall I proceed?", "which order?", "want me to fix X now?", or already gave a recommendation | **Answer it yourself, nudge with the decision** |
+| **Needs a real human** — needs a secret/credential, a destructive/irreversible action, an external/manual action, or a costly trade-off with no clear best option | **Notify Roie** |
+
+The babysitter is smart enough to make routine engineering decisions on Roie's behalf.
+It must NOT bounce every "should I continue?" question to Roie — that just recreates the
+stall. It answers routine questions itself (approving Copilot's own recommendation, or
+using obvious engineering sense like "validate before refactoring" / "fix the blocker
+first" / "prove the pattern early") and tells Copilot to proceed autonomously. It only
+escalates to Roie for genuinely human matters: secrets/credentials, destructive or
+irreversible actions (deleting prod, force-push, spending money, notifying external
+people), external actions the agent can't perform, or a real trade-off where guessing
+wrong is costly.
 
 Older versions used rigid keyword/state rules (`ONLY_MESSAGE_ON_USER_INPUT`, `wait`,
 etc.) that lumped *done / working / stuck* all under "idle" and stayed silent for all of
@@ -179,7 +190,21 @@ The LLM automation reasons over `supervisor.py context` and acts only when neede
 4. **Nudge counter auto-resets** the moment Copilot writes to the session after a nudge
    (it reacted), so a fresh stall later starts from zero.
 5. **After `MAX_NUDGES` with no progress** → back off and alert Roie via Teams.
-6. **Needs a human** (approval / manual action) → do NOT nudge; notify Roie via Teams.
+6. **Routine question** ("shall I proceed?", "which order?", "want me to fix X now?", or
+   Copilot already gave a recommendation) → **answer it yourself** and nudge with the
+   decision. Approve Copilot's recommendation, or use obvious engineering sense (validate
+   before refactoring, fix the blocker first, prove the pattern early). Also tell Copilot
+   to keep going autonomously and stop only for genuinely human matters — not just to ask
+   permission to continue.
+7. **Needs a real human** → do NOT nudge; notify Roie via Teams. Reserve this for: a
+   secret/credential/OTP only Roie has; a destructive or irreversible action (delete prod,
+   force-push, spend money, notify external people); an external/manual action the agent
+   can't perform; or a costly trade-off with no clear best option.
+
+**Answering routine questions is the default, not the exception.** Bouncing every
+"should I continue?" back to Roie recreates the very stall the babysitter exists to
+prevent. The nudge message should state the decision clearly (which option / what order /
+"yes, proceed"), a brief why, and instruct Copilot to continue autonomously.
 
 **Detecting a false "still working" claim** — treat as *stuck* when Copilot says things like
 "I'll ping you when it clears", "I'll report at the next milestone", or "still building",
@@ -208,7 +233,12 @@ Do not send routine "still working" status pings.
 python3 ~/.copilot/skills/copilot-babysitter/supervisor.py context
 
 # Send an LLM-authored message to Copilot chat (respects MAX_NUDGES; --force overrides).
-python3 ~/.copilot/skills/copilot-babysitter/supervisor.py nudge "your tailored message"
+# Prefer piping via stdin (heredoc) so backticks, $(...), quotes, or ! in the message
+# are NOT interpreted by the shell:
+python3 ~/.copilot/skills/copilot-babysitter/supervisor.py nudge <<'NUDGE_EOF'
+your tailored message here
+NUDGE_EOF
+# (An inline arg also works for simple messages: supervisor.py nudge "message")
 
 # Clear the consecutive-nudge counter (e.g. after the user intervenes manually).
 python3 ~/.copilot/skills/copilot-babysitter/supervisor.py reset
