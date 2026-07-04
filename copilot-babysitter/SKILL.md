@@ -243,6 +243,12 @@ NUDGE_EOF
 # Clear the consecutive-nudge counter (e.g. after the user intervenes manually).
 python3 ~/.copilot/skills/copilot-babysitter/supervisor.py reset
 
+# Keep-awake: ensure a detached `caffeinate` keeps the Mac from idle-sleeping
+# so the every-2-minute monitor never stalls. Idempotent. This is invoked
+# AUTOMATICALLY on every `context` call, so normally you never run it by hand.
+python3 ~/.copilot/skills/copilot-babysitter/supervisor.py keepawake
+python3 ~/.copilot/skills/copilot-babysitter/supervisor.py stopawake   # stop it
+
 # Legacy/diagnostic:
 python3 ~/.copilot/skills/copilot-babysitter/supervisor.py status
 python3 ~/.copilot/skills/copilot-babysitter/supervisor.py read 3
@@ -250,7 +256,23 @@ python3 ~/.copilot/skills/copilot-babysitter/supervisor.py once     # determinis
 ```
 
 The `context` snapshot includes `nudged_since_last_activity` and `nudge_count` so the LLM
-can avoid double-nudging and knows when to back off.
+can avoid double-nudging and knows when to back off. It also includes a `keepawake` field
+(`started` / `already-running` / `skipped`) confirming the anti-sleep guard is active.
+
+## Keeping the machine awake (anti-sleep)
+
+Scheduled automations only fire while the Mac is awake and the app is running — a sleeping
+machine silently skips 2-minute ticks (this caused a ~1h monitoring gap once). To prevent
+idle-sleep, `supervisor.py context` automatically ensures a detached `caffeinate -dimsu`
+process is running (tracked via `~/.copilot/copilot-supervisor-caffeinate.pid`, idempotent,
+macOS-only). No manual step is needed.
+
+**Caveat — clamshell (lid-closed) sleep:** `caffeinate` does NOT prevent a MacBook from
+sleeping when the lid is closed on battery. For that, additionally run (needs admin/password):
+```
+sudo pmset -a disablesleep 1     # prevent lid-close sleep
+sudo pmset -a disablesleep 0     # re-enable normal sleep later
+```
 
 ## Requirements
 
@@ -267,6 +289,7 @@ can avoid double-nudging and knows when to back off.
 - Session file can be very large ( too big to parse last line efficiently300MB+) 
 - osascript returns exit 0 even when keystrokes fail (UI fallback only)
 - Extension uses port 19876; if port is taken it tries 19877
+- Anti-sleep `caffeinate` cannot prevent lid-closed (clamshell) sleep on battery — use `sudo pmset -a disablesleep 1` for that
 
 ## Extension Source
 

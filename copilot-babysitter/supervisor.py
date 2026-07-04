@@ -35,6 +35,7 @@ WORKSPACE_STORAGE = Path.home() / "Library/Application Support/Code/User/workspa
 LOG_FILE = Path.home() / ".copilot/copilot-supervisor.log"
 STATE_FILE = Path.home() / ".copilot/copilot-supervisor-state.json"
 NUDGE_QUEUE_FILE = Path.home() / ".copilot/nudge-queue.txt"
+CAFFEINATE_PIDFILE = Path.home() / ".copilot/copilot-supervisor-caffeinate.pid"
 BLOCKER_PHRASES = (
     "before editing, let me confirm",
     "please confirm",
@@ -743,6 +744,83 @@ def recent_exchanges(session_data, n=6):
         })
     return out
 
+def _pid_is_caffeinate(pid):
+    """Return True if pid is a live caffeinate process (best-effort, macOS)."""
+    try:
+        out = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "comm="],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        return out.endswith("caffeinate")
+    except Exception:
+        return False
+
+
+def ensure_keepawake():
+    """Ensure a detached `caffeinate` process is keeping the Mac awake.
+
+    Idempotent: if the caffeinate we previously started is still alive, do
+    nothing. Otherwise spawn a fresh one and record its pid. This keeps the
+    every-2-minute monitor from stalling when the machine would otherwise
+    idle-sleep. No-op on non-macOS platforms.
+
+    NOTE: caffeinate does NOT prevent clamshell (lid-closed) sleep on battery;
+    that additionally requires `sudo pmset -a disablesleep 1`.
+    """
+    if sys.platform != "darwin":
+        return {"keepawake": "skipped", "reason": "not macOS"}
+
+    # Already running?
+    try:
+        if CAFFEINATE_PIDFILE.exists():
+            existing = int(CAFFEINATE_PIDFILE.read_text().strip() or "0")
+            if existing and _pid_is_caffeinate(existing):
+                return {"keepawake": "already-running", "pid": existing}
+    except Exception:
+        pass
+
+    # Spawn a fresh detached caffeinate: prevent display/idle/disk/system
+    # sleep and declare the user active.
+    try:
+        proc = subprocess.Popen(
+            ["caffeinate", "-dimsu"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        CAFFEINATE_PIDFILE.parent.mkdir(parents=True, exist_ok=True)
+        CAFFEINATE_PIDFILE.write_text(str(proc.pid))
+        return {"keepawake": "started", "pid": proc.pid}
+    except FileNotFoundError:
+        return {"keepawake": "error", "reason": "caffeinate not found"}
+    except Exception as e:
+        return {"keepawake": "error", "reason": str(e)}
+
+
+def stop_keepawake():
+    """Terminate the caffeinate process we started, if any."""
+    if not CAFFEINATE_PIDFILE.exists():
+        return {"keepawake": "not-running"}
+    try:
+        pid = int(CAFFEINATE_PIDFILE.read_text().strip() or "0")
+    except Exception:
+        pid = 0
+    result = {"keepawake": "stopped", "pid": pid}
+    if pid and _pid_is_caffeinate(pid):
+        try:
+            os.kill(pid, 15)
+        except Exception as e:
+            result = {"keepawake": "error", "reason": str(e), "pid": pid}
+    else:
+        result = {"keepawake": "not-running", "pid": pid}
+    try:
+        CAFFEINATE_PIDFILE.unlink()
+    except Exception:
+        pass
+    return result
+
+
 def build_llm_context():
     """Emit a rich, LLM-ready snapshot of the active Copilot session.
 
@@ -752,8 +830,15 @@ def build_llm_context():
     """
     session_file, mtime = find_active_session()
     if not session_file:
-        print(json.dumps({"status": "no_session"}, indent=2))
+        # Even with no active session, keep the machine awake so we don't miss
+        # the session starting up.
+        keepawake = ensure_keepawake()
+        print(json.dumps({"status": "no_session", **keepawake}, indent=2))
         return
+
+    # Self-maintain wakefulness: guarantees the 2-minute monitor keeps firing
+    # instead of stalling on idle-sleep. Idempotent and best-effort.
+    keepawake = ensure_keepawake()
 
     session_data = reconstruct_session_data(session_file)
     context = read_session_context(session_file)
@@ -791,6 +876,7 @@ def build_llm_context():
         # True when we already nudged and Copilot has NOT written anything since —
         # the LLM should wait for a reaction rather than nudging again.
         "nudged_since_last_activity": bool(last_nudge and last_nudge >= mtime),
+        "keepawake": keepawake.get("keepawake"),
     }
     print(json.dumps(snapshot, indent=2))
 
@@ -859,6 +945,10 @@ if __name__ == "__main__":
         do_nudge(msg, force=force)
     elif cmd == "reset":
         reset_nudges()
+    elif cmd == "keepawake":
+        print(json.dumps(ensure_keepawake(), indent=2))
+    elif cmd == "stopawake":
+        print(json.dumps(stop_keepawake(), indent=2))
     elif cmd == "once":
         check_once()
     elif cmd == "help":
@@ -870,6 +960,8 @@ Usage:
   python3 supervisor.py context      — Dump rich LLM-ready session snapshot (no decision)
   python3 supervisor.py nudge "msg"  — Send an LLM-authored message to Copilot chat
   python3 supervisor.py reset        — Clear the consecutive-nudge counter
+  python3 supervisor.py keepawake    — Ensure a detached caffeinate keeps the Mac awake (idempotent)
+  python3 supervisor.py stopawake    — Stop the caffeinate keep-awake process
   python3 supervisor.py status       — Show current session status
   python3 supervisor.py read [N]     — Read last N conversation exchanges
   python3 supervisor.py help         — Show this help
