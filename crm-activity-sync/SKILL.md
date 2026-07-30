@@ -56,7 +56,9 @@ Default to POSIX commands; fall back to PowerShell when running on Windows nativ
 
 - **Single source of truth.** All activity evidence lives in `customer-engagements/`. This skill reads `activity-log.md` — nothing else. If an activity isn't logged there, it doesn't get synced to CRM.
 - **Never fabricate activities.** Only create CRM tasks backed by entries in activity-log.md. If the log is empty for a date, create nothing.
-- **Idempotent.** Before creating any CRM task, check if a matching task already exists on the milestone (same subject + same scheduled-end month). Never create duplicates.
+- **Idempotent per daily activity.** Re-running the same source entry must not create
+  another task, but work logged on different dates is new activity even when the
+  subject, activity type, milestone, and scheduled-end month are identical.
 - **Milestone-first.** Every CRM activity must link to a milestone via the `regardingobjectid` field. If no milestone exists, queue the activity locally and alert the user — never create an orphaned task.
 - **User reviews before CRM writes.** In interactive mode, always present the proposed activities and get confirmation before creating anything. In automated mode, create activities and send a receipt summary.
 - **Preserve source language.** Activity subjects and descriptions stay in their original language (English or Hebrew). Do not translate.
@@ -594,7 +596,7 @@ For each activity to create, build the CRM task record:
 | CRM Field | Source | Notes |
 |---|---|---|
 | `subject` | `{initials} - {type}` from preferences | E.g., "RBH - POC" |
-| `description` | Auto-generated summary from activity-log.md `### Summary` section | Keep concise: 1-3 sentences. Include customer name, topic, key work done. |
+| `description` | Activity date marker + auto-generated summary from activity-log.md `### Summary` section | Start with `Activity date: YYYY-MM-DD`, then keep the summary concise: 1-3 sentences with customer name, topic, and key work done. |
 | `scheduledend` | End of current month at 08:00 UTC (11:00 IST), OR milestone due date if sooner | Matches the pattern seen in the screenshot (4/30/2026 11:00 AM). If the milestone has a `msp_milestonedate`, use the earlier of: milestone date or end-of-month. |
 | `msp_taskcategory` | Activity type → CRM enum (see table below) | Maps our activity classification to CRM picklist values. |
 | `regardingobjectid` | Milestone GUID | Binds the task to the milestone via OData relationship. |
@@ -663,19 +665,35 @@ that's also missing, default to `Customer Engagement` (`861980000`).
 
 ### 5b. Idempotency Check
 
-Before creating, query existing activities on the milestone:
+Build a stable source key for each parsed daily entry:
+
+```text
+{activity-date}|{customer}|{project}|{subject}|{milestone-id}
+```
+
+Check `sync-log.json` for that exact key before creating the task. Also include
+`Activity date: YYYY-MM-DD` in the CRM task description so the source date is
+preserved and can be used for recovery if the local sync log is unavailable.
+
+A task is a duplicate only when it represents the **same source activity date,
+customer, project, subject, and milestone**. A same-subject task from another day
+or another month is not a duplicate and must not be skipped. For example, daily
+`RBH - POC` entries on the same milestone are separate CRM activities when their
+activity dates differ.
+
+Before creating, optionally query milestone activities for recovery:
 
 ```bash
 node ~/.copilot/skills/msx-crm/crm-tools/run-tool.mjs get_milestone_activities '{"milestoneId":"<milestone-id>"}'
 ```
 
-Check if any existing task has:
-- Same `subject` (exact match), OR
-- Same `subject` pattern (e.g., "RBH - POC") AND same `scheduledend` month
+Only treat a CRM result as a recovered duplicate when its subject matches and its
+description contains the same `Activity date: YYYY-MM-DD` marker. Never deduplicate
+by subject or scheduled-end month alone.
 
-If a match exists:
-- Interactive: "Activity 'RBH - POC' already exists on milestone {name}. Skip or update?"
-- Auto: Skip, log to sync-log.
+If the exact source key or date marker matches:
+- Interactive: "This exact daily activity is already synced. Skip or update?"
+- Auto: Skip and retain the existing task ID in `sync-log.json`.
 
 ### 5c. Ensure Deal Team Membership
 
@@ -921,7 +939,7 @@ Items pending for >30 days are flagged:
 | **CRM write fails (403)** | HTTP 403 on POST | Task not created | Queue to pending with error; may need SSP to grant permissions on milestone |
 | **CRM write fails (500)** | HTTP 500 on POST | Task not created | Retry once after 5s; if still fails → queue |
 | **No milestone** | Milestone query returns empty | Can't link activity | Queue with reason `no_milestone`; alert user to request milestone creation |
-| **Duplicate activity** | Idempotency check finds match | Redundant create | Skip silently (auto) or ask (interactive) |
+| **Duplicate activity** | Exact source key or activity-date marker matches | Redundant retry of the same daily entry | Skip silently (auto) or ask (interactive); never deduplicate different work dates by subject/month |
 | **Wrong milestone mapping** | User reports error | Activity on wrong milestone | Run `/crm-activity-sync remap {customer}/{project}` to fix; note: CRM task may need manual move |
 | **Customer-engagements missing** | Folder doesn't exist | No local data source | Fall back to calendar-only mode |
 | **M365 not signed in** | `m_m365_status` check | No calendar/Teams data | Prompt sign-in (interactive) or skip + alert (auto) |
